@@ -23,7 +23,7 @@ epoxy = "0.1"
 libloading = "0.8"
 
 # Storage
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.38", features = ["bundled"] }
 dirs = "5.0"
 
 # Utils
