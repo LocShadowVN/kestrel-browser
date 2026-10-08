@@ -12,4 +12,4 @@ codegen-units = 1
 strip = true
 
 [patch.crates-io]
-gl_generator = { version = "0.14" }
+gl_generator = { git = "https://github.com/rust-windowing/gl-rs.git", branch = "master" }
