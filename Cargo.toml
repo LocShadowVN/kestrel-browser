@@ -1,0 +1,15 @@
+[workspace]
+members = [
+    "shared",
+    "src-servo",
+]
+resolver = "2"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+
+[profile.dev]
+opt-level = 1
