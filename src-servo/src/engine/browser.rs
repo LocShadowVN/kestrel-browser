@@ -1,56 +1,64 @@
-use gtk4::prelude::*;
-use gtk4::Notebook;
-use std::rc::Rc;
+//! Browser state — quản lý tabs, navigation, history.
+
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use servo_gtk::WebView;
 
+use crate::chrome::tabbar::TabBar;
 use crate::storage::database::Database;
+use crate::util::config::Config;
 
 pub struct Tab {
     pub webview: WebView,
     pub title: String,
     pub url: String,
+    pub page_num: u32,
 }
 
 pub struct BrowserState {
     db: Rc<Database>,
+    config: Rc<Config>,
     tabs: RefCell<Vec<Tab>>,
     active_tab: RefCell<usize>,
 }
 
 impl BrowserState {
-    pub fn new(db: Rc<Database>) -> Self {
+    pub fn new(db: Rc<Database>, config: Rc<Config>) -> Self {
         Self {
             db,
+            config,
             tabs: RefCell::new(Vec::new()),
             active_tab: RefCell::new(0),
         }
     }
 
-    pub fn open_tab_in_notebook(&self, notebook: &Notebook, url: &str) {
+    pub fn homepage(&self) -> String {
+        self.config.homepage()
+    }
+
+    /// Mở tab mới trong TabBar.
+    pub fn open_tab(&self, tabbar: &TabBar, url: &str) {
         let webview = WebView::new();
         webview.set_vexpand(true);
         webview.set_hexpand(true);
         webview.load_url(url);
 
+        let page_num = tabbar.add_tab(&webview, "Loading...");
+
         let tab = Tab {
-            webview: webview.clone(),
+            webview,
             title: "New Tab".into(),
             url: url.into(),
+            page_num,
         };
 
-        let tabs_len = {
+        {
             let mut tabs = self.tabs.borrow_mut();
             tabs.push(tab);
-            tabs.len()
-        };
+            *self.active_tab.borrow_mut() = tabs.len() - 1;
+        }
 
-        let page_num = notebook.append_page(&webview, Some(&gtk4::Label::new(Some("New Tab"))));
-        notebook.set_current_page(Some(page_num));
-        *self.active_tab.borrow_mut() = tabs_len - 1;
-
-        // Lưu history
         let _ = self.db.insert_history(url, url);
     }
 
@@ -68,18 +76,24 @@ impl BrowserState {
     }
 
     pub fn go_back(&self) {
-        // TODO: Servo API cho back/forward
+        // TODO: Servo API for history navigation chưa verify.
+        // Cần đọc source servo-gtk để biết method chính xác.
+        log::info!("go_back: chưa implement");
     }
 
     pub fn go_forward(&self) {
-        // TODO: Servo API cho back/forward
+        // TODO: Servo API for history navigation chưa verify.
+        log::info!("go_forward: chưa implement");
     }
 
     pub fn reload(&self) {
         let active = *self.active_tab.borrow();
         let tabs = self.tabs.borrow();
         if let Some(tab) = tabs.get(active) {
+            // Servo-gtk chưa có reload() rõ ràng.
+            // Workaround: load lại URL hiện tại.
             tab.webview.load_url(&tab.url);
+            log::info!("reload: {}", tab.url);
         }
     }
 }
