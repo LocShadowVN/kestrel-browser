@@ -10,33 +10,54 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+  # Build time optimizations (không cần sccache)
+  CARGO_INCREMENTAL: "0"
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  CARGO_BUILD_JOBS: "4"
+
+  # Override release profile cho CI (không sửa Cargo.toml)
+  CARGO_PROFILE_RELEASE_LTO: "thin"
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+  CARGO_PROFILE_RELEASE_PANIC: "abort"
+
+  # lld linker — nhanh hơn GNU ld
+  RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
+
 jobs:
   build:
-    name: Build Servo browser
+    name: Build Kestrel
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 120
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install system deps
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential cmake ninja-build python3 python3-pip \
-            pkg-config curl wget file clang llvm \
-            libssl-dev libgtk-4-dev libx11-dev libxcb1-dev \
+            pkg-config curl wget file clang llvm lld \
+            libssl-dev \
+            libgtk-4-dev \
+            libepoxy-dev \
+            libx11-dev libxcb1-dev \
             libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             libfontconfig1-dev libfreetype6-dev libharfbuzz-dev \
             libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
-            libgbm-dev libwayland-dev libxkbcommon-dev libsqlite3-dev
+            libgbm-dev libwayland-dev libxkbcommon-dev \
+            libsqlite3-dev
+
+      - name: Verify toolchain
+        run: |
+          ld.lld --version
+          clang --version | head -1
+          rustc --version
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.4
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -44,15 +65,16 @@ jobs:
           workspaces: |
             shared
             src-servo
-          shared-key: kestrel-v1
+          shared-key: kestrel-v3
           cache-all-crates: true
           cache-on-failure: true
+          cache-directories: |
+            ~/.cargo/git
+            ~/.cargo/registry
 
       - name: Build release
-        env:
-          RUSTC_WRAPPER: sccache
-          SCCACHE_GHA_ENABLED: "true"
-        run: cargo build --release --workspace
+        run: |
+          time cargo build --release --workspace
 
       - name: Verify binary
         run: |
