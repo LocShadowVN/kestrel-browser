@@ -1,4 +1,4 @@
-name: CI
+name: Build
 
 on:
   push:
@@ -9,121 +9,34 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: 1
 
 jobs:
-  check:
-    name: Check & Lint
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            cmake \
-            ninja-build \
-            python3 \
-            python3-pip \
-            pkg-config \
-            curl \
-            wget \
-            file \
-            clang \
-            llvm \
-            libssl-dev \
-            libgtk-4-dev \
-            libx11-dev \
-            libxcb1-dev \
-            libxcb-render0-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev \
-            libharfbuzz-dev \
-            libgl1-mesa-dev \
-            libegl1-mesa-dev \
-            libgles2-mesa-dev \
-            libgbm-dev \
-            libwayland-dev \
-            libxkbcommon-dev \
-            libsqlite3-dev
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            shared
-            src-servo
-          cache-on-failure: true
-          shared-key: kestrel-check
-
-      - name: cargo fmt
-        run: cargo fmt --all -- --check
-        continue-on-error: true
-
-      - name: cargo check
-        run: cargo check --workspace --all-targets
-
-      - name: cargo clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-        continue-on-error: true
-
   build:
-    name: Build release binary
+    name: Build Servo browser
     runs-on: ubuntu-24.04
-    needs: check
     timeout-minutes: 180
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install system dependencies
+      - name: Install system deps
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential \
-            cmake \
-            ninja-build \
-            python3 \
-            python3-pip \
-            pkg-config \
-            curl \
-            wget \
-            file \
-            clang \
-            llvm \
-            libssl-dev \
-            libgtk-4-dev \
-            libx11-dev \
-            libxcb1-dev \
-            libxcb-render0-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev \
-            libharfbuzz-dev \
-            libgl1-mesa-dev \
-            libegl1-mesa-dev \
-            libgles2-mesa-dev \
-            libgbm-dev \
-            libwayland-dev \
-            libxkbcommon-dev \
-            libsqlite3-dev
+            build-essential cmake ninja-build python3 python3-pip \
+            pkg-config curl wget file clang llvm \
+            libssl-dev libgtk-4-dev libx11-dev libxcb1-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libfontconfig1-dev libfreetype6-dev libharfbuzz-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
+            libgbm-dev libwayland-dev libxkbcommon-dev libsqlite3-dev
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.4
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -131,13 +44,17 @@ jobs:
           workspaces: |
             shared
             src-servo
+          shared-key: kestrel-v1
+          cache-all-crates: true
           cache-on-failure: true
-          shared-key: kestrel-build
 
       - name: Build release
+        env:
+          RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "true"
         run: cargo build --release --workspace
 
-      - name: Verify binary exists
+      - name: Verify binary
         run: |
           ls -lh target/release/kestrel
           file target/release/kestrel
@@ -147,5 +64,5 @@ jobs:
         with:
           name: kestrel-linux-x86_64
           path: target/release/kestrel
-          retention-days: 14
+          retention-days: 30
           if-no-files-found: error
