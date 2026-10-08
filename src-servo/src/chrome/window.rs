@@ -205,8 +205,7 @@ impl MainWindow {
             });
         }
 
-        // Popups: window.open / target=_blank → open new tab in same window
-        // (Phase 1: simple — log only. Phase 2: actually open new tab.)
+        // Popups: window.open / target=_blank → log only (Phase 2: mở tab mới)
         {
             webview.connect_create_web_view(move |_wv, url| {
                 log::info!("Popup requested: {}", url);
@@ -215,10 +214,8 @@ impl MainWindow {
 
         webview.load_url(url);
 
-        let _ = active_tab; // set below
-
         tabs.borrow_mut().push(TabEntry { webview, page_num });
-        *active_tab = Cell::new(tab_index);
+        active_tab.set(tab_index);
 
         // Sync omnibox with initial URL
         toolbar.omnibox().set_text(url);
