@@ -1,4 +1,4 @@
-//! Toolbar — navigation buttons + omnibox + menu.
+//! Toolbar — navigation buttons + omnibox.
 
 use std::rc::Rc;
 
@@ -6,86 +6,92 @@ use gtk4::prelude::*;
 use gtk4::{Box as GtkBox, Button, MenuButton, Orientation};
 
 use crate::chrome::omnibox::Omnibox;
-use crate::engine::browser::BrowserState;
-use crate::engine::navigation;
 
 pub struct Toolbar {
     container: GtkBox,
     omnibox: Rc<Omnibox>,
+    back: Button,
+    forward: Button,
+    reload: Button,
+    home: Button,
+    menu: MenuButton,
 }
 
 impl Toolbar {
-    pub fn new(browser: Rc<BrowserState>) -> Self {
+    pub fn new() -> Self {
         let container = GtkBox::new(Orientation::Horizontal, 4);
         container.set_margin_top(4);
         container.set_margin_bottom(4);
         container.set_margin_start(4);
         container.set_margin_end(4);
 
-        let back_btn = Button::from_icon_name("go-previous-symbolic");
-        let forward_btn = Button::from_icon_name("go-next-symbolic");
-        let reload_btn = Button::from_icon_name("view-refresh-symbolic");
-        let home_btn = Button::from_icon_name("go-home-symbolic");
-        let menu_btn = MenuButton::new();
-        menu_btn.set_icon_name("open-menu-symbolic");
+        let back = Button::from_icon_name("go-previous-symbolic");
+        back.set_tooltip_text(Some("Back"));
 
-        container.append(&back_btn);
-        container.append(&forward_btn);
-        container.append(&reload_btn);
+        let forward = Button::from_icon_name("go-next-symbolic");
+        forward.set_tooltip_text(Some("Forward"));
 
-        // Omnibox
+        let reload = Button::from_icon_name("view-refresh-symbolic");
+        reload.set_tooltip_text(Some("Reload"));
+
         let omnibox = Rc::new(Omnibox::new());
+
+        let home = Button::from_icon_name("go-home-symbolic");
+        home.set_tooltip_text(Some("Home"));
+
+        let menu = MenuButton::new();
+        menu.set_icon_name("open-menu-symbolic");
+
+        container.append(&back);
+        container.append(&forward);
+        container.append(&reload);
         container.append(omnibox.widget());
+        container.append(&home);
+        container.append(&menu);
 
-        container.append(&home_btn);
-        container.append(&menu_btn);
+        Self {
+            container,
+            omnibox,
+            back,
+            forward,
+            reload,
+            home,
+            menu,
+        }
+    }
 
-        // Callback: Enter trong omnibox → navigate
-        let browser_nav = browser.clone();
-        omnibox.set_on_submit(move |text| {
-            let url = navigation::normalize_url(text);
-            browser_nav.navigate(&url);
-        });
+    pub fn omnibox(&self) -> &Rc<Omnibox> {
+        &self.omnibox
+    }
 
-        // Callback: Back
-        let browser_back = browser.clone();
-        back_btn.connect_clicked(move |_| {
-            browser_back.go_back();
-        });
+    pub fn on_back<F: Fn() + 'static>(&self, cb: F) {
+        self.back.connect_clicked(move |_| cb());
+    }
 
-        // Callback: Forward
-        let browser_fwd = browser.clone();
-        forward_btn.connect_clicked(move |_| {
-            browser_fwd.go_forward();
-        });
+    pub fn on_forward<F: Fn() + 'static>(&self, cb: F) {
+        self.forward.connect_clicked(move |_| cb());
+    }
 
-        // Callback: Reload
-        let browser_reload = browser.clone();
-        reload_btn.connect_clicked(move |_| {
-            browser_reload.reload();
-        });
+    pub fn on_reload<F: Fn() + 'static>(&self, cb: F) {
+        self.reload.connect_clicked(move |_| cb());
+    }
 
-        // Callback: Home
-        let browser_home = browser.clone();
-        home_btn.connect_clicked(move |_| {
-            let home = browser_home.homepage();
-            browser_home.navigate(&home);
-        });
-
-        Self { container, omnibox }
+    pub fn on_home<F: Fn() + 'static>(&self, cb: F) {
+        self.home.connect_clicked(move |_| cb());
     }
 
     pub fn widget(&self) -> &GtkBox {
         &self.container
     }
 
-    /// Update omnibox khi URL thay đổi (gọi từ delegate).
-    pub fn set_url(&self, url: &str) {
-        self.omnibox.set_text(url);
+    #[allow(dead_code)]
+    pub fn menu(&self) -> &MenuButton {
+        &self.menu
     }
+}
 
-    /// Focus omnibox (Ctrl+L).
-    pub fn focus_omnibox(&self) {
-        self.omnibox.focus();
+impl Default for Toolbar {
+    fn default() -> Self {
+        Self::new()
     }
 }
