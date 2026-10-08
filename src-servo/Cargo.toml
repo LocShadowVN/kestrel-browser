@@ -10,20 +10,20 @@ path = "src/main.rs"
 [dependencies]
 shared = { path = "../shared" }
 
-# Servo engine via GTK4 wrapper. Pin same rev as servo-gtk uses.
+# Servo engine via GTK4 wrapper
 servo-gtk = { git = "https://github.com/nacho/servo-gtk.git", branch = "main" }
 
-# GTK4 UI — MUST match servo-gtk versions (gtk 0.11, glib 0.22, gio 0.22)
+# GTK4 UI — PHẢI khớp với phiên bản servo-gtk dùng (gtk 0.11, glib 0.22, gio 0.22)
 gtk4 = { version = "0.11", features = ["v4_12"] }
 glib = { version = "0.22", features = ["v2_74"] }
 gio = "0.22"
 
-# OpenGL function loader — required for Servo rendering
+# OpenGL function loader — bắt buộc cho Servo rendering
 epoxy = "0.1"
 libloading = "0.8"
 
-# Storage
-rusqlite = { version = "0.38", features = ["bundled"] }
+# Storage — dùng 0.37 để khớp với servo-storage (tránh conflict libsqlite3-sys)
+rusqlite = { version = "0.37", features = ["bundled"] }
 dirs = "5.0"
 
 # Utils
@@ -32,5 +32,5 @@ url = "2.5"
 log = "0.4"
 env_logger = "0.11"
 
-# Needed by epoxy::load_with signature (returns *const c_void)
+# Cần cho epoxy::load_with signature (trả về *const c_void)
 libc = "0.2"
