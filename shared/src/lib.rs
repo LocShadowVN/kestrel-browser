@@ -19,7 +19,6 @@ pub struct BookmarkRecord {
 pub struct AppConfig {
     pub search_engine: String,
     pub homepage: String,
-    pub download_path: String,
     pub dark_theme: bool,
 }
 
@@ -28,7 +27,6 @@ impl Default for AppConfig {
         Self {
             search_engine: "https://search.brave.com/search?q=".into(),
             homepage: "about:blank".into(),
-            download_path: "/tmp".into(),
             dark_theme: true,
         }
     }
