@@ -11,5 +11,8 @@ lto = true
 codegen-units = 1
 strip = true
 
+# Patch gl_generator lên 0.14 để tránh xml-rs 0.7 bị yanked.
+# epoxy 0.1 phụ thuộc gl_generator 0.9 → xml-rs 0.7 (đã bị yanked).
+# gl_generator 0.14 dùng xml-rs 0.8 ổn định.
 [patch.crates-io]
 gl_generator = { git = "https://github.com/rust-windowing/gl-rs.git", branch = "master" }
