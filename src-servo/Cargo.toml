@@ -1,0 +1,30 @@
+[package]
+name = "kestrel"
+version = "1.0.0-alpha"
+edition = "2021"
+
+[[bin]]
+name = "kestrel"
+path = "src/main.rs"
+
+[dependencies]
+shared = { path = "../shared" }
+
+# Servo engine + GTK4 integration
+servo = "0.1.0"
+servo-gtk = { git = "https://github.com/nacho/servo-gtk.git", branch = "main" }
+
+# GTK4 UI
+gtk4 = { version = "0.9", features = ["v4_14"] }
+glib = "0.20"
+
+# Storage
+rusqlite = { version = "0.31", features = ["bundled"] }
+dirs = "5.0"
+
+# Utils
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+url = "2.5"
+log = "0.4"
+env_logger = "0.11"
