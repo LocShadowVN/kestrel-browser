@@ -16,3 +16,6 @@ strip = true
 # gl_generator 0.14 dùng xml-rs 0.8 ổn định.
 [patch.crates-io]
 gl_generator = { git = "https://github.com/rust-windowing/gl-rs.git", branch = "master" }
+
+[patch.crates-io]
+rusqlite = { git = "https://github.com/rusqlite/rusqlite.git", tag = "v0.38.0" }
