@@ -1,6 +1,4 @@
-//! App config — wrapper quanh Database để đọc/ghi settings.
-//!
-//! Cache trong RAM để tránh query SQLite mỗi lần đọc.
+//! Config — wrapper quanh Database, cache trong RAM.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -16,39 +14,32 @@ pub struct Config {
 
 impl Config {
     pub fn new(db: Rc<Database>) -> Self {
-        let cached = db.load_config();
+        let mut cached = AppConfig::default();
+        if let Some(v) = db.load_config_item("search_engine") {
+            cached.search_engine = v;
+        }
+        if let Some(v) = db.load_config_item("homepage") {
+            cached.homepage = v;
+        }
+        if let Some(v) = db.load_config_item("dark_theme") {
+            cached.dark_theme = v == "true";
+        }
         Self {
             db,
             cached: RefCell::new(cached),
         }
     }
 
-    pub fn get(&self) -> AppConfig {
-        self.cached.borrow().clone()
+    pub fn homepage(&self) -> String {
+        self.cached.borrow().homepage.clone()
     }
 
     pub fn search_engine(&self) -> String {
         self.cached.borrow().search_engine.clone()
     }
 
-    pub fn homepage(&self) -> String {
-        self.cached.borrow().homepage.clone()
-    }
-
-    pub fn download_path(&self) -> String {
-        self.cached.borrow().download_path.clone()
-    }
-
     pub fn dark_theme(&self) -> bool {
         self.cached.borrow().dark_theme
-    }
-
-    pub fn set_search_engine(&self, value: &str) -> Result<(), String> {
-        self.db
-            .save_config_item("search_engine", value)
-            .map_err(|e| e.to_string())?;
-        self.cached.borrow_mut().search_engine = value.to_string();
-        Ok(())
     }
 
     pub fn set_homepage(&self, value: &str) -> Result<(), String> {
@@ -59,11 +50,11 @@ impl Config {
         Ok(())
     }
 
-    pub fn set_download_path(&self, value: &str) -> Result<(), String> {
+    pub fn set_search_engine(&self, value: &str) -> Result<(), String> {
         self.db
-            .save_config_item("download_path", value)
+            .save_config_item("search_engine", value)
             .map_err(|e| e.to_string())?;
-        self.cached.borrow_mut().download_path = value.to_string();
+        self.cached.borrow_mut().search_engine = value.to_string();
         Ok(())
     }
 
