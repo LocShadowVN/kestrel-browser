@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="assets/logo.svg" width="140" height="140" alt="Kestrel Browser" />
-
 # Kestrel Browser
 
 Trình duyệt desktop nhẹ cho Linux, xây trên **Servo engine** — viết bằng Rust.
