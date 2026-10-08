@@ -111,3 +111,201 @@ Nếu dự án build thành công trong tương lai:
 git clone https://github.com/LocShadowVN/kestrel-browser.git
 cd kestrel-browser
 cargo build --release
+```
+
+### Vấn đề đã biết
+
+Dự án đang gặp các vấn đề sau trong quá trình build:
+
+1. **`gl_generator` và `xml-rs` conflict** — `epoxy 0.1` phụ thuộc `gl_generator 0.9`,
+   crate này yêu cầu `xml-rs 0.7` đã bị yanked khỏi crates.io. Cần patch qua Git.
+2. **`libsqlite3-sys` conflict** — `kestrel` và `servo-storage` yêu cầu các phiên
+   bản `rusqlite` khác nhau, gây xung đột native library link.
+3. **Servo API chưa ổn định** — crate `servo` và `servo-gtk` đang phát triển tích
+   cực, API có thể thay đổi giữa các commit.
+
+Các vấn đề này đang được giải quyết từng bước. Theo dõi tab
+[Issues](https://github.com/LocShadowVN/kestrel-browser/issues) để cập nhật.
+
+### Không hỗ trợ
+
+Khi dự án chạy được (trong tương lai), các tính năng sau sẽ **không** hoạt động
+do giới hạn của Servo engine:
+
+| Tính năng | Lý do |
+|---|---|
+| YouTube video | Servo chưa implement MSE (Media Source Extensions) |
+| Netflix, Spotify Web | Thiếu DRM (Widevine CDM) |
+| Google Meet, Microsoft Teams | Thiếu WebCodecs |
+| Extension Chrome/Firefox | Servo không hỗ trợ WebExtension API |
+| Google Docs editor | Thiếu một số API DOM phức tạp |
+
+### Phiên bản trước — Vibird
+
+Nếu bạn cần một trình duyệt chạy được ngay bây giờ với đầy đủ tính năng
+(adblock 4 tầng, vault, download, session), xem phiên bản cũ **Vibird v2.4.2**
+dùng WebKitGTK. Nó có tag `v2.4.2-webkit-final` trong repo.
+
+**Lưu ý:** Vibird có bug Nvidia + Wayland đã nêu ở trên. Trên Intel/AMD iGPU
+và X11, nó chạy ổn định.
+
+### Đóng góp
+
+Dự án đang ở giai đoạn rất sớm. Đóng góp hoan nghênh, đặc biệt:
+
+- Fix dependency conflicts (xem mục Vấn đề đã biết)
+- Báo cáo lỗi build
+- Test trên các cấu hình khác nhau
+- Cải thiện documentation
+
+### License
+
+GNU General Public License v3.0. Xem [LICENSE](LICENSE).
+
+---
+
+<a name="english"></a>
+## English
+
+### ⚠️ CURRENT STATUS
+
+> **THE PROJECT DOES NOT BUILD.**
+>
+> The binary does not compile. We are working through dependency conflicts
+> between `servo`, `servo-gtk`, and other crates.
+>
+> **No installation. No release. No binary.**
+>
+> This is a personal experimental project. See [About](#about) for details.
+
+### About
+
+Kestrel is a personal project to build a desktop browser for Linux using the
+**Servo engine** — a pure-Rust browser engine backed by Linux Foundation Europe
+and developed primarily by Igalia.
+
+**Long-term goal:** a lightweight, pure-Rust browser that runs on low-end
+machines, does not bundle Chromium, and has zero telemetry.
+
+**Current reality:** the project is in a **very early stage**. Code is written,
+but does not build due to dependency conflicts. Nothing is available to try.
+
+### Why a rewrite?
+
+The previous version — **Vibird** — used WebKitGTK through Tauri. Vibird
+worked, had 4-layer adblock, vault, and downloads. But it had one unfixable
+problem:
+
+**WebKitGTK has compositor bugs on Nvidia + Wayland.** On some GPU
+configurations, the app could be OOM-killed or dropped to login screen within
+minutes. This is a WebKitGTK bug, not Vibird's — it affects every WebKitGTK
+app including GNOME Web, Devhelp, and Yelp.
+
+After evaluating alternatives (WebKitGTK, CEF, Blitz, Sciter, Ultralight),
+only Servo met the criteria:
+- Written in Rust
+- Lightweight, embedding-first
+- Has a future (Sovereign Tech Fund backed, Igalia-led)
+
+Kestrel is a long-term bet on Servo. Trade-off accepted: lower web
+compatibility (78% WPT vs 96%), but escapes the Nvidia + Wayland bugs.
+
+### Development Status
+
+#### ❌ Not Working
+
+| Component | Status | Notes |
+|---|---|---|
+| Build | ❌ **Failing** | Dependency conflicts unresolved |
+| Binary | ❌ None | No releases |
+| Installation | ❌ Not possible | No installers |
+| Runtime | ❌ N/A | Nothing to run |
+
+#### 🔧 In Development
+
+| Component | Status | Notes |
+|---|---|---|
+| Architecture | ✅ Written | Full structure, not compiling |
+| GTK4 UI | ✅ Written | Window, toolbar, omnibox, tabbar |
+| Servo integration | ⚠️ Fixing | Dependency conflicts |
+| SQLite storage | ✅ Written | Schema + queries |
+| URL normalization | ✅ Written + tested | Unit tests present |
+
+#### 📋 Roadmap
+
+| Phase | Content | Status |
+|---|---|---|
+| Phase 0 | Successful build | 🔧 In progress |
+| Phase 1 | Basic working browser | ⏸ Blocked by Phase 0 |
+| Phase 2 | Adblock (network + cosmetic) | ⏸ Blocked by Phase 1 |
+| Phase 3 | Privacy (vault, UA spoof) | ⏸ Blocked by Phase 2 |
+| Phase 4 | Media (video, audio) | ⏸ Blocked by Servo upstream |
+
+### Requirements
+
+If the project builds successfully in the future:
+
+- **OS:** Linux x86_64
+- **GPU:** Vulkan or OpenGL 3.3+
+- **GTK4:** available on Ubuntu 22.04+, Fedora 37+, Arch, etc.
+- **RAM:** 4 GB minimum, 8 GB recommended for build
+
+### Building from Source
+
+**Warning:** Build currently fails. See [Known Issues](#known-issues).
+
+```bash
+git clone https://github.com/LocShadowVN/kestrel-browser.git
+cd kestrel-browser
+cargo build --release
+```
+
+### Known Issues
+
+The project is currently blocked by:
+
+1. **`gl_generator` / `xml-rs` conflict** — `epoxy 0.1` depends on
+   `gl_generator 0.9`, which requires `xml-rs 0.7` (yanked from crates.io).
+   Requires Git patch.
+2. **`libsqlite3-sys` conflict** — `kestrel` and `servo-storage` require
+   different `rusqlite` versions, causing native library link conflicts.
+3. **Servo API instability** — `servo` and `servo-gtk` crates are actively
+   developed; API may change between commits.
+
+These are being resolved incrementally. Track progress in
+[Issues](https://github.com/LocShadowVN/kestrel-browser/issues).
+
+### Not Supported
+
+When the project eventually works, the following will **not** work due to
+Servo engine limitations:
+
+| Feature | Reason |
+|---|---|
+| YouTube video | Servo lacks MSE (Media Source Extensions) |
+| Netflix, Spotify Web | No DRM (Widevine CDM) |
+| Google Meet, Microsoft Teams | No WebCodecs |
+| Chrome/Firefox extensions | Servo lacks WebExtension API |
+| Google Docs editor | Missing complex DOM APIs |
+
+### Previous Version — Vibird
+
+If you need a working browser now with full features (4-layer adblock, vault,
+downloads, session), see the previous **Vibird v2.4.2** using WebKitGTK.
+It has tag `v2.4.2-webkit-final`.
+
+**Note:** Vibird has the Nvidia + Wayland bug described above. On Intel/AMD
+iGPU with X11, it runs stably.
+
+### Contributing
+
+The project is very early stage. Contributions welcome, especially:
+
+- Fix dependency conflicts (see Known Issues)
+- Report build errors
+- Test on different configurations
+- Improve documentation
+
+### License
+
+GNU General Public License v3.0. See [LICENSE](LICENSE).
