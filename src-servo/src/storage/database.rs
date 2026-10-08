@@ -1,5 +1,5 @@
 use rusqlite::{params, Connection};
-use shared::{AppConfig, BookmarkRecord, HistoryRecord};
+use shared::{BookmarkRecord, HistoryRecord};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -13,10 +13,10 @@ impl Database {
         let data_dir = dirs::data_local_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("kestrel-browser");
-        fs::create_dir_all(&data_dir).expect("Cannot create app dir");
+        fs::create_dir_all(&data_dir).expect("Cannot create data dir");
 
         let db_path = data_dir.join("kestrel.sqlite");
-        let conn = Connection::open(&db_path).expect("SQLite init failed");
+        let conn = Connection::open(&db_path).expect("SQLite open failed");
 
         conn.execute_batch(
             "
@@ -35,9 +35,12 @@ impl Database {
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+            CREATE INDEX IF NOT EXISTS idx_history_url ON history(url);
             ",
         )
-        .expect("Schema migration failed");
+        .expect("Schema creation failed");
+
+        log::info!("Database initialized at {:?}", db_path);
 
         Self {
             conn: Mutex::new(conn),
@@ -53,12 +56,12 @@ impl Database {
         Ok(())
     }
 
-    pub fn fetch_history(&self) -> rusqlite::Result<Vec<HistoryRecord>> {
+    pub fn fetch_history(&self, limit: usize) -> rusqlite::Result<Vec<HistoryRecord>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, url, title, timestamp FROM history ORDER BY id DESC LIMIT 100",
+            "SELECT id, url, title, timestamp FROM history ORDER BY id DESC LIMIT ?1",
         )?;
-        let rows = stmt.query_map([], |r| {
+        let rows = stmt.query_map(params![limit as i64], |r| {
             Ok(HistoryRecord {
                 id: Some(r.get(0)?),
                 url: r.get(1)?,
@@ -67,6 +70,12 @@ impl Database {
             })
         })?;
         Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    pub fn clear_history(&self) -> rusqlite::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM history", [])?;
+        Ok(())
     }
 
     pub fn insert_bookmark(&self, url: &str, title: &str) -> rusqlite::Result<()> {
@@ -91,6 +100,12 @@ impl Database {
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
+    pub fn remove_bookmark(&self, id: i64) -> rusqlite::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM bookmarks WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
     pub fn save_config_item(&self, key: &str, val: &str) -> rusqlite::Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -100,25 +115,11 @@ impl Database {
         Ok(())
     }
 
-    pub fn load_config(&self) -> AppConfig {
+    pub fn load_config_item(&self, key: &str) -> Option<String> {
         let conn = self.conn.lock().unwrap();
-        let mut cfg = AppConfig::default();
-
-        if let Ok(mut stmt) = conn.prepare("SELECT key, value FROM settings") {
-            if let Ok(rows) = stmt.query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-            }) {
-                for (k, v) in rows.flatten() {
-                    match k.as_str() {
-                        "search_engine" => cfg.search_engine = v,
-                        "homepage" => cfg.homepage = v,
-                        "download_path" => cfg.download_path = v,
-                        "dark_theme" => cfg.dark_theme = v == "true",
-                        _ => {}
-                    }
-                }
-            }
-        }
-        cfg
+        let mut stmt = conn
+            .prepare("SELECT value FROM settings WHERE key = ?1")
+            .ok()?;
+        stmt.query_row(params![key], |r| r.get::<_, String>(0)).ok()
     }
 }
