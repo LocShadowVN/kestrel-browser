@@ -14,19 +14,15 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
   CARGO_BUILD_JOBS: "4"
 
-  # Override release profile cho CI (không sửa Cargo.toml)
   CARGO_PROFILE_RELEASE_LTO: "thin"
   CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
-  # KHÔNG set panic=abort: servo dùng catch_unwind, cần unwind.
   CARGO_PROFILE_RELEASE_PANIC: "unwind"
-
-  RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
 
 jobs:
   build:
     name: Build Kestrel
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 180
 
     steps:
       - name: Checkout
@@ -37,7 +33,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential cmake ninja-build python3 python3-pip \
-            pkg-config curl wget file clang llvm lld \
+            pkg-config curl wget file clang llvm \
             libssl-dev \
             libgtk-4-dev \
             libepoxy-dev \
@@ -48,12 +44,6 @@ jobs:
             libgbm-dev libwayland-dev libxkbcommon-dev \
             libsqlite3-dev
 
-      - name: Verify toolchain
-        run: |
-          ld.lld --version
-          clang --version | head -1
-          rustc --version
-
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -63,12 +53,15 @@ jobs:
           workspaces: |
             shared
             src-servo
-          shared-key: kestrel-v3
+          shared-key: kestrel-v5
           cache-all-crates: true
           cache-on-failure: true
           cache-directories: |
             ~/.cargo/git
             ~/.cargo/registry
+
+      - name: Resolve dependencies (debug)
+        run: cargo tree --workspace 2>&1 | head -150
 
       - name: Build release
         run: time cargo build --release --workspace
