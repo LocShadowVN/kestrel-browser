@@ -31,8 +31,9 @@ impl TabBar {
     }
 
     pub fn close_tab(&self, index: usize) {
-        if let Some(child) = self.notebook.nth_page(Some(index as u32)) {
-            self.notebook.remove(&child);
+        let page_num = index as u32;
+        if self.notebook.nth_page(Some(page_num)).is_some() {
+            self.notebook.remove_page(Some(page_num));
         }
     }
 
