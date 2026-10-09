@@ -5,6 +5,12 @@ members = [
 ]
 resolver = "2"
 
+# Pin pkcs1 xuống 0.8.0-rc.4 để tương thích với rsa 0.10.0-rc.18.
+# pkcs1 0.8.0-rc.5 đổi RsaPrivateKey<'a> thành RsaPrivateKey<U>,
+# gây lỗi E0107 khi compile rsa 0.10.0-rc.18.
+[workspace.dependencies]
+pkcs1 = "=0.8.0-rc.4"
+
 [profile.release]
 opt-level = "s"
 lto = true
@@ -12,10 +18,5 @@ codegen-units = 1
 strip = true
 panic = "unwind"
 
-# Patch epoxy sang fork theCapypara/epoxy-rs.
-# epoxy 0.1.0 upstream kéo gl_generator 0.9 → xml-rs 0.7 (yanked) → build fail.
-# servo-gtk đã patch epoxy trong Cargo.toml của nó, nhưng patch đó không
-# áp dụng khi servo-gtk được dùng như git dependency. Workspace Kestrel
-# phải khai báo patch tương tự ở đây.
 [patch.crates-io]
 epoxy = { git = "https://github.com/theCapypara/epoxy-rs", rev = "7d9d88a8dfec2ddedc647b7a8f6c1e5b3e6c6ec0" }
