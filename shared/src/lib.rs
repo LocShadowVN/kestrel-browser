@@ -26,7 +26,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             search_engine: "https://search.brave.com/search?q=".into(),
-            homepage: "about:blank".into(),
+            homepage: "kestrel://home".into(),
             dark_theme: true,
         }
     }
