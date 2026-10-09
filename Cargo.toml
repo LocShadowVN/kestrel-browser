@@ -12,7 +12,6 @@ codegen-units = 1
 strip = true
 panic = "unwind"
 
-# Patch gl_generator để tránh xml-rs 0.7 bị yanked.
-# Pin rev cụ thể để reproducible.
-[patch.crates-io]
-gl_generator = { git = "https://github.com/rust-windowing/gl-rs.git", rev = "dcdd53b9d73166a281b197cff1b5e86071d18927" }
+# KHÔNG patch gl_generator.
+# epoxy 0.1 cần gl_generator 0.9 API; patch sang master (0.14) gây lỗi build.
+# Thay vào đó, loại bỏ epoxy khỏi dependencies (xem src-servo/Cargo.toml).
