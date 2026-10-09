@@ -11,22 +11,22 @@ path = "src/main.rs"
 shared = { path = "../shared" }
 
 # Pin commit cụ thể của servo-gtk để reproducible.
-# Lấy commit hash mới nhất từ: https://github.com/nacho/servo-gtk/commits/main
 servo-gtk = { git = "https://github.com/nacho/servo-gtk.git", rev = "dc18d7418bc4373fa84c5a1d3fed0448784a0b34" }
 
+# GTK4 — version phải khớp với servo-gtk (gtk4 0.11, glib 0.22, gio 0.22).
 gtk4 = { version = "0.11", features = ["v4_12"] }
 glib = { version = "0.22", features = ["v2_74"] }
 gio = "0.22"
 
-epoxy = "0.1"
-libloading = "0.8"
+# KHÔNG dùng epoxy/libloading. servo-gtk tự load epoxy bên trong nó.
+# Thêm epoxy ở đây sẽ gây conflict version và lỗi build.
 
+# Storage — bundled SQLite để tránh link conflict với system lib.
 rusqlite = { version = "0.38", features = ["bundled"] }
 dirs = "5.0"
 
+# Utils
 serde = { version = "1.0", features = ["derive"] }
 url = "2.5"
 log = "0.4"
 env_logger = "0.11"
-
-libc = "0.2"
