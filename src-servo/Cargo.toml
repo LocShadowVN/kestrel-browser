@@ -14,7 +14,7 @@ shared = { path = "../shared" }
 pkcs1 = { workspace = true }
 
 # Pin commit cụ thể của servo-gtk để reproducible.
-servo-gtk = { git = "https://github.com/nacho/servo-gtk.git", rev = "dc18d7418bc4373fa84c5a1d3fed0448784a0b34" }
+servo-gtk = { git = "https://github.com/nacho/servo-gtk.git", rev = "1b0fc0896c09df59152c69b9e4cdad177d5dd461" }
 
 # GTK4 — version phải khớp với servo-gtk (gtk4 0.11, glib 0.22, gio 0.22).
 gtk4 = { version = "0.11", features = ["v4_12"] }
