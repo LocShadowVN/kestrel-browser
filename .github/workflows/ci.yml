@@ -9,8 +9,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-
-  # Build time optimizations (không cần sccache)
   CARGO_INCREMENTAL: "0"
   CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
@@ -19,9 +17,9 @@ env:
   # Override release profile cho CI (không sửa Cargo.toml)
   CARGO_PROFILE_RELEASE_LTO: "thin"
   CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
-  CARGO_PROFILE_RELEASE_PANIC: "abort"
+  # KHÔNG set panic=abort: servo dùng catch_unwind, cần unwind.
+  CARGO_PROFILE_RELEASE_PANIC: "unwind"
 
-  # lld linker — nhanh hơn GNU ld
   RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
 
 jobs:
@@ -73,8 +71,10 @@ jobs:
             ~/.cargo/registry
 
       - name: Build release
-        run: |
-          time cargo build --release --workspace
+        run: time cargo build --release --workspace
+
+      - name: Run tests
+        run: cargo test --workspace --release
 
       - name: Verify binary
         run: |
