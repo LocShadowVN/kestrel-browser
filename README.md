@@ -116,7 +116,7 @@ Những giới hạn này sẽ được cập nhật khi Servo upstream bổ sun
 
 ### Phiên bản trước — Vibird
 
-Nếu cần một trình duyệt đầy đủ tính năng ngay bây giờ (adblock 4 tầng, vault, download, session), xem phiên bản cũ **Vibird v2.4.2** (WebKitGTK), tag `v2.4.2-webkit-final`.
+Nếu cần một trình duyệt đầy đủ tính năng ngay bây giờ (adblock 4 tầng, vault, download, session), xem phiên bản cũ **Vibird** tại [LocShadowVN/VibirdBrowser](https://github.com/LocShadowVN/VibirdBrowser).
 
 **Lưu ý:** Vibird có lỗi Nvidia + Wayland đã nêu ở trên. Trên Intel/AMD iGPU và X11, nó chạy ổn định.
 
@@ -131,7 +131,7 @@ Dự án đang ở giai đoạn đầu. Đóng góp được hoan nghênh, đặ
 
 ### Giấy phép
 
-GNU General Public License v3.0. Xem LICENSE.
+GNU General Public License v3.0. Xem [LICENSE](LICENSE).
 
 ---
 
@@ -231,7 +231,7 @@ These limitations will be revisited as Servo upstream adds support.
 
 ### Previous Version — Vibird
 
-For a feature-complete browser available today (4-layer adblock, vault, downloads, session), see the previous **Vibird v2.4.2** (WebKitGTK), tag `v2.4.2-webkit-final`.
+For a feature-complete browser available today (4-layer adblock, vault, downloads, session), see the previous **Vibird** at [LocShadowVN/VibirdBrowser](https://github.com/LocShadowVN/VibirdBrowser).
 
 **Note:** Vibird has the Nvidia + Wayland bug described above. On Intel/AMD iGPU with X11, it runs stably.
 
@@ -246,4 +246,4 @@ The project is at an early stage. Contributions are welcome, especially:
 
 ### License
 
-GNU General Public License v3.0. See LICENSE.
+GNU General Public License v3.0. See [LICENSE](LICENSE).
