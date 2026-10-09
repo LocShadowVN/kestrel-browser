@@ -1,6 +1,8 @@
 mod app;
 mod chrome;
+mod compat;
 mod engine;
+mod internal_pages;
 mod storage;
 mod util;
 
