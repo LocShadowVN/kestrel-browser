@@ -42,8 +42,9 @@ jobs:
             libfontconfig1-dev libfreetype6-dev libharfbuzz-dev \
             libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
             libgbm-dev libwayland-dev libxkbcommon-dev \
-            libsqlite3-dev
-
+            libsqlite3-dev \
+            protobuf-compiler
+            
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
