@@ -4,6 +4,8 @@ mod engine;
 mod storage;
 mod util;
 
+use std::ffi::c_void;
+
 fn main() -> glib::ExitCode {
     // CRITICAL: servo-gtk spawns a Servo runner subprocess by re-executing
     // this binary. If we're the runner, hand off immediately. Never returns
@@ -25,6 +27,11 @@ fn main() -> glib::ExitCode {
 
 /// Load libepoxy into the process. Must be called exactly once, before any
 /// WebView is created.
+///
+/// # Safety
+/// This function loads a dynamic library and registers function pointers
+/// globally. It must be called exactly once, before any OpenGL context is
+/// created. Calling it multiple times is undefined behaviour.
 fn load_epoxy() {
     let library = unsafe {
         libloading::os::unix::Library::new("libepoxy.so.0")
@@ -32,8 +39,11 @@ fn load_epoxy() {
     .expect("Failed to load libepoxy.so.0 — install libepoxy-dev");
 
     epoxy::load_with(|name| {
-        unsafe { library.get::<*const std::ffi::c_void>(name.as_bytes()) }
-            .map(|sym| *sym)
-            .unwrap_or(std::ptr::null())
+        unsafe {
+            library
+                .get::<*const c_void>(name.as_bytes())
+                .map(|sym| *sym)
+                .unwrap_or(std::ptr::null())
+        }
     });
 }
