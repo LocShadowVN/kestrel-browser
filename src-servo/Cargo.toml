@@ -10,19 +10,23 @@ path = "src/main.rs"
 [dependencies]
 shared = { path = "../shared" }
 
-# Servo engine via GTK4 wrapper
-servo-gtk = { git = "https://github.com/nacho/servo-gtk.git", branch = "main" }
+# Servo engine via GTK4 wrapper.
+# Pin to a specific commit for reproducibility.
+servo-gtk = { git = "https://github.com/nacho/servo-gtk.git", rev = "dc18d7418bc4373fa84c5a1d3fed0448784a0b34" }
 
-# GTK4 UI — PHẢI khớp với phiên bản servo-gtk dùng (gtk 0.11, glib 0.22, gio 0.22)
+# GTK4 UI — version phải khớp với servo-gtk.
+# servo-gtk dùng gtk4 0.11, glib 0.22, gio 0.22.
 gtk4 = { version = "0.11", features = ["v4_12"] }
 glib = { version = "0.22", features = ["v2_74"] }
 gio = "0.22"
 
-# OpenGL function loader — bắt buộc cho Servo rendering
+# OpenGL function loader — bắt buộc cho Servo rendering.
+# epoxy 0.1 dùng gl_generator 0.9 (xml-rs 0.7 yanked).
+# Patch gl_generator trong workspace root giải quyết vấn đề này.
 epoxy = "0.1"
 libloading = "0.8"
 
-# Storage — dùng 0.37 để khớp với servo-storage (tránh conflict libsqlite3-sys)
+# Storage — dùng bundled SQLite để tránh link conflict.
 rusqlite = { version = "0.38", features = ["bundled"] }
 dirs = "5.0"
 
