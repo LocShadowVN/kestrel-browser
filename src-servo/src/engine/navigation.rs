@@ -7,6 +7,11 @@ pub fn normalize_url(input: &str) -> String {
         return "about:blank".into();
     }
 
+    // Kestrel internal pages — giữ nguyên, không qua search.
+    if input.starts_with("kestrel://") || input == "kestrel:" {
+        return input.to_string();
+    }
+
     if input.starts_with("http://")
         || input.starts_with("https://")
         || input.starts_with("about:")
@@ -74,5 +79,31 @@ mod tests {
     #[test]
     fn test_search() {
         assert!(normalize_url("hello world").starts_with("https://search.brave.com/search?q="));
+    }
+
+    #[test]
+    fn test_kestrel_internal_scheme() {
+        assert_eq!(normalize_url("kestrel://home"), "kestrel://home");
+        assert_eq!(normalize_url("kestrel://settings"), "kestrel://settings");
+        assert_eq!(normalize_url("kestrel://history"), "kestrel://history");
+        assert_eq!(normalize_url("kestrel:"), "kestrel:");
+    }
+
+    #[test]
+    fn test_kestrel_scheme_with_whitespace() {
+        assert_eq!(normalize_url("  kestrel://home  "), "kestrel://home");
+    }
+
+    #[test]
+    fn test_localhost() {
+        assert_eq!(normalize_url("localhost:8080"), "http://localhost:8080");
+        assert_eq!(normalize_url("127.0.0.1:3000"), "http://127.0.0.1:3000");
+    }
+
+    #[test]
+    fn test_special_schemes() {
+        assert_eq!(normalize_url("about:blank"), "about:blank");
+        assert_eq!(normalize_url("file:///tmp/test.html"), "file:///tmp/test.html");
+        assert_eq!(normalize_url("data:text/plain,hello"), "data:text/plain,hello");
     }
 }
