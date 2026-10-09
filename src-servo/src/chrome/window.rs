@@ -1,6 +1,7 @@
 //! MainWindow — layout: toolbar trên, tabbar dưới.
 //!
-//! Quản lý tabs, kết nối signals từ Servo WebView → UI.
+//! Quản lý tabs, kết nối signals từ Servo WebView → UI, xử lý điều hướng
+//! đến các trang nội bộ (kestrel://home, kestrel://settings, ...).
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -8,11 +9,13 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use gtk4::{Application, ApplicationWindow, Box as GtkBox, Orientation};
 
+use servo_gtk::user_content::{UserContentManager, UserScript};
 use servo_gtk::{LoadEvent, WebView};
 
 use crate::chrome::tabbar::TabBar;
 use crate::chrome::toolbar::Toolbar;
 use crate::engine::navigation;
+use crate::internal_pages;
 use crate::storage::database::Database;
 use crate::util::config::Config;
 
@@ -20,6 +23,9 @@ use crate::util::config::Config;
 struct TabEntry {
     webview: WebView,
     page_num: u32,
+    /// UserContentManager của tab này. Giữ để có thể thêm script/style sau.
+    #[allow(dead_code)]
+    ucm: UserContentManager,
 }
 
 pub struct MainWindow {
@@ -73,15 +79,21 @@ impl MainWindow {
             });
         }
 
-        // ---- Omnibox Enter → navigate ----
+        // ---- Omnibox Enter → navigate (hỗ trợ kestrel://) ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
+            let db_c = db.clone();
             toolbar.omnibox().on_activate(move |text| {
                 let url = navigation::normalize_url(text);
                 let idx = active_c.get();
                 if let Some(tab) = tabs_c.borrow().get(idx) {
-                    tab.webview.load_url(&url);
+                    if let Some(html) = internal_pages::resolve(&url) {
+                        let _ = db_c.insert_history(&url, "Trang nội bộ");
+                        tab.webview.load_html(html, Some("kestrel://"));
+                    } else {
+                        tab.webview.load_url(&url);
+                    }
                 }
             });
         }
@@ -91,11 +103,17 @@ impl MainWindow {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
             let config_c = config.clone();
+            let db_c = db.clone();
             toolbar.on_home(move || {
                 let home = config_c.homepage();
                 let idx = active_c.get();
                 if let Some(tab) = tabs_c.borrow().get(idx) {
-                    tab.webview.load_url(&home);
+                    if let Some(html) = internal_pages::resolve(&home) {
+                        let _ = db_c.insert_history(&home, "Trang chủ");
+                        tab.webview.load_html(html, Some("kestrel://"));
+                    } else {
+                        tab.webview.load_url(&home);
+                    }
                 }
             });
         }
@@ -150,6 +168,9 @@ impl MainWindow {
     }
 
     /// Tạo tab mới, kết nối signals, thêm vào Notebook.
+    ///
+    /// Nếu `url` là trang nội bộ (`kestrel://...`), render bằng `load_html()`.
+    /// Ngược lại, dùng `load_url()`.
     fn open_tab(
         tabs: &Rc<RefCell<Vec<TabEntry>>>,
         tabbar: &Rc<TabBar>,
@@ -158,14 +179,72 @@ impl MainWindow {
         active_tab: &Rc<Cell<usize>>,
         url: &str,
     ) {
-        let webview = WebView::new();
+        // Tạo UserContentManager với polyfill + message handler.
+        let ucm = UserContentManager::new();
+        ucm.add_script(&UserScript::new(crate::compat::POLYFILL_SCRIPT));
+        ucm.register_script_message_handler("kestrel");
+
+        let webview = WebView::with_user_content_manager(&ucm);
         webview.set_hexpand(true);
         webview.set_vexpand(true);
 
         let page_num = tabbar.add_tab(&webview, "Loading...");
         let tab_index = tabs.borrow().len();
 
-        // Signal: title changed → update tab label
+        // ---- Message handler: nhận tin nhắn từ trang nội bộ ----
+        {
+            let tabs_c = tabs.clone();
+            let db_c = db.clone();
+            let toolbar_c = toolbar.clone();
+            let active_c = active_tab.clone();
+            let tabbar_c = tabbar.clone();
+            ucm.connect_script_message_received(move |_ucm, _name, body| {
+                log::debug!("Message from page: {}", body);
+                match serde_json::from_str::<serde_json::Value>(body) {
+                    Ok(v) => {
+                        let action = v.get("action").and_then(|a| a.as_str()).unwrap_or("");
+                        match action {
+                            "navigate" => {
+                                if let Some(u) = v.get("url").and_then(|u| u.as_str()) {
+                                    let normalized = navigation::normalize_url(u);
+                                    let idx = active_c.get();
+                                    if let Some(tab) = tabs_c.borrow().get(idx) {
+                                        if let Some(html) = internal_pages::resolve(&normalized) {
+                                            tab.webview.load_html(html, Some("kestrel://"));
+                                        } else {
+                                            tab.webview.load_url(&normalized);
+                                        }
+                                    }
+                                }
+                            }
+                            "save-settings" => {
+                                if let Some(h) = v.get("homepage").and_then(|x| x.as_str()) {
+                                    let _ = db_c.save_config_item("homepage", h);
+                                }
+                                if let Some(s) = v.get("search_engine").and_then(|x| x.as_str()) {
+                                    let _ = db_c.save_config_item("search_engine", s);
+                                }
+                                if let Some(d) = v.get("dark_theme").and_then(|x| x.as_bool()) {
+                                    let _ = db_c.save_config_item("dark_theme",
+                                        if d { "true" } else { "false" });
+                                }
+                                log::info!("Settings saved from page.");
+                            }
+                            _ => {
+                                log::warn!("Unknown action from page: {}", action);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Invalid JSON from page: {} ({})", body, e);
+                    }
+                }
+                let _ = &toolbar_c;
+                let _ = &tabbar_c;
+            });
+        }
+
+        // ---- Signal: title changed → update tab label ----
         {
             let tabbar_c = tabbar.clone();
             webview.connect_title_notify(move |wv| {
@@ -177,7 +256,7 @@ impl MainWindow {
             });
         }
 
-        // Signal: uri changed → update omnibox if this is active tab
+        // ---- Signal: uri changed → update omnibox if active tab ----
         {
             let omnibox_c = toolbar.omnibox().clone();
             let active_c = active_tab.clone();
@@ -191,13 +270,16 @@ impl MainWindow {
             });
         }
 
-        // Signal: load finished → record history
+        // ---- Signal: load finished → record history ----
         {
             let db_c = db.clone();
             webview.connect_load_changed(move |wv, event| {
                 if let LoadEvent::Finished = event {
                     if let (Some(uri), Some(title)) = (wv.uri(), wv.title()) {
-                        if uri.starts_with("http://") || uri.starts_with("https://") {
+                        if uri.starts_with("http://")
+                            || uri.starts_with("https://")
+                            || uri.starts_with("kestrel://")
+                        {
                             let _ = db_c.insert_history(&uri, &title);
                         }
                     }
@@ -205,20 +287,25 @@ impl MainWindow {
             });
         }
 
-        // Popups: window.open / target=_blank → log only (Phase 2: mở tab mới)
+        // ---- Popups: window.open / target=_blank ----
         {
             webview.connect_create_web_view(move |_wv, url| {
                 log::info!("Popup requested: {}", url);
             });
         }
 
-        webview.load_url(url);
+        // ---- Load nội dung ----
+        if let Some(html) = internal_pages::resolve(url) {
+            // Trang nội bộ: render HTML trực tiếp.
+            webview.load_html(html, Some("kestrel://"));
+            toolbar.omnibox().set_text(url);
+        } else {
+            webview.load_url(url);
+            toolbar.omnibox().set_text(url);
+        }
 
-        tabs.borrow_mut().push(TabEntry { webview, page_num });
+        tabs.borrow_mut().push(TabEntry { webview, page_num, ucm });
         active_tab.set(tab_index);
-
-        // Sync omnibox with initial URL
-        toolbar.omnibox().set_text(url);
     }
 
     pub fn present(&self) {
