@@ -10,6 +10,9 @@ path = "src/main.rs"
 [dependencies]
 shared = { path = "../shared" }
 
+# Pin pkcs1 để tránh breaking change của pkcs1 0.8.0-rc.5.
+pkcs1 = { workspace = true }
+
 # Pin commit cụ thể của servo-gtk để reproducible.
 servo-gtk = { git = "https://github.com/nacho/servo-gtk.git", rev = "1b0fc0896c09df59152c69b9e4cdad177d5dd461" }
 
