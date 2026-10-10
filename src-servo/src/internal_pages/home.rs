@@ -51,7 +51,6 @@ pub const HTML: &str = r#"<!DOCTYPE html>
   .search {
     width: 100%;
     max-width: 560px;
-    position: relative;
     margin-bottom: 48px;
   }
   .search input {
@@ -67,13 +66,18 @@ pub const HTML: &str = r#"<!DOCTYPE html>
   }
   .search input:focus { border-color: var(--accent); }
   .cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 16px;
+    display: flex;
+    flex-wrap: wrap;
     width: 100%;
     max-width: 720px;
+    justify-content: center;
+    margin: -8px;
   }
   .card {
+    flex: 1 1 180px;
+    min-width: 180px;
+    max-width: 220px;
+    margin: 8px;
     background: var(--card-bg);
     border: 1px solid var(--card-border);
     border-radius: 12px;
@@ -81,6 +85,8 @@ pub const HTML: &str = r#"<!DOCTYPE html>
     text-decoration: none;
     color: var(--fg);
     transition: transform 0.12s, border-color 0.12s;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
   }
   .card:hover {
     transform: translateY(-2px);
@@ -134,12 +140,13 @@ pub const HTML: &str = r#"<!DOCTYPE html>
       if (e.key === 'Enter') {
         var v = this.value.trim();
         if (v) {
-          // Gửi tín hiệu về native qua kênh message của servo-gtk.
           if (window.servoGtk && window.servoGtk.messageHandlers &&
               window.servoGtk.messageHandlers.kestrel) {
             window.servoGtk.messageHandlers.kestrel.postMessage(
               JSON.stringify({ action: 'navigate', url: v })
             );
+          } else {
+            console.log('servoGtk not available');
           }
         }
       }
