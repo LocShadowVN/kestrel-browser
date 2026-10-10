@@ -23,7 +23,6 @@ use crate::util::config::Config;
 struct TabEntry {
     webview: WebView,
     page_num: u32,
-    /// UserContentManager của tab này. Giữ để không bị drop.
     #[allow(dead_code)]
     ucm: UserContentManager,
 }
@@ -54,7 +53,10 @@ impl MainWindow {
             toolbar.on_back(move || {
                 let idx = active_c.get();
                 if let Some(tab) = tabs_c.borrow().get(idx) {
+                    log::debug!("Back button pressed for tab {}", idx);
                     tab.webview.go_back();
+                } else {
+                    log::debug!("Back button pressed but no tab at index {}", idx);
                 }
             });
         }
@@ -66,6 +68,7 @@ impl MainWindow {
             toolbar.on_forward(move || {
                 let idx = active_c.get();
                 if let Some(tab) = tabs_c.borrow().get(idx) {
+                    log::debug!("Forward button pressed for tab {}", idx);
                     tab.webview.go_forward();
                 }
             });
@@ -78,6 +81,7 @@ impl MainWindow {
             toolbar.on_reload(move || {
                 let idx = active_c.get();
                 if let Some(tab) = tabs_c.borrow().get(idx) {
+                    log::debug!("Reload button pressed for tab {}", idx);
                     tab.webview.reload();
                 }
             });
@@ -89,6 +93,7 @@ impl MainWindow {
             let active_c = active_tab.clone();
             let db_c = db.clone();
             toolbar.omnibox().on_activate(move |text| {
+                log::debug!("Omnibox activated: {}", text);
                 let url = navigation::normalize_url(text);
                 let idx = active_c.get();
                 if let Some(tab) = tabs_c.borrow().get(idx) {
@@ -105,6 +110,7 @@ impl MainWindow {
             let db_c = db.clone();
             toolbar.on_home(move || {
                 let home = config_c.homepage();
+                log::debug!("Home button pressed, loading {}", home);
                 let idx = active_c.get();
                 if let Some(tab) = tabs_c.borrow().get(idx) {
                     load_any(&tab.webview, &home, &db_c);
@@ -121,7 +127,11 @@ impl MainWindow {
                 active_c.set(page_num as usize);
                 if let Some(tab) = tabs_c.borrow().get(page_num as usize) {
                     if let Some(uri) = tab.webview.uri() {
-                        omnibox_c.set_text(&uri);
+                        if !uri.starts_with("data:") {
+                            omnibox_c.set_text(&uri);
+                        } else {
+                            omnibox_c.set_text("kestrel://home");
+                        }
                     }
                 }
             });
@@ -185,11 +195,12 @@ impl MainWindow {
             let tabs_c = tabs.clone();
             let db_c = db.clone();
             let active_c = active_tab.clone();
-            ucm.connect_script_message_received(move |_ucm, _name, body| {
-                log::debug!("Message from page: {}", body);
+            ucm.connect_script_message_received(move |_ucm, name, body| {
+                log::info!("Message from page [{}]: {}", name, body);
                 match serde_json::from_str::<serde_json::Value>(body) {
                     Ok(v) => {
                         let action = v.get("action").and_then(|a| a.as_str()).unwrap_or("");
+                        log::info!("Action: {}", action);
                         match action {
                             "navigate" => {
                                 if let Some(u) = v.get("url").and_then(|u| u.as_str()) {
@@ -248,6 +259,11 @@ impl MainWindow {
                     return;
                 }
                 if let Some(uri) = wv.uri() {
+                    // Bỏ qua data: URL — implementation detail của load_html().
+                    // Giữ omnibox hiển thị kestrel://... thay vì chuỗi dài.
+                    if uri.starts_with("data:") {
+                        return;
+                    }
                     omnibox_c.set_text(&uri);
                 }
             });
@@ -279,7 +295,13 @@ impl MainWindow {
 
         // ---- Load nội dung ban đầu ----
         load_any(&webview, url, db);
-        toolbar.omnibox().set_text(url);
+
+        // Set omnibox text — nếu là trang nội bộ, hiển thị kestrel://
+        if internal_pages::is_internal(url) {
+            toolbar.omnibox().set_text(url);
+        } else {
+            toolbar.omnibox().set_text(url);
+        }
 
         tabs.borrow_mut().push(TabEntry { webview, page_num, ucm });
         active_tab.set(tab_index);
@@ -291,19 +313,17 @@ impl MainWindow {
 }
 
 /// Load một URL vào WebView, tự động xử lý trang nội bộ.
-///
-/// - `kestrel://home`, `kestrel://settings` → HTML tĩnh
-/// - `kestrel://history` → HTML động từ database
-/// - URL khác → `load_url()` bình thường
 fn load_any(webview: &WebView, url: &str, db: &Database) {
     // Trang tĩnh
     if let Some(html) = internal_pages::resolve(url) {
+        log::debug!("Loading internal static page: {}", url);
         webview.load_html(html, Some("kestrel://"));
         return;
     }
 
     // Trang động
     if internal_pages::is_dynamic(url) {
+        log::debug!("Loading internal dynamic page: {}", url);
         let records = match db.fetch_history(200) {
             Ok(rows) => rows
                 .into_iter()
@@ -320,5 +340,6 @@ fn load_any(webview: &WebView, url: &str, db: &Database) {
     }
 
     // URL bình thường
+    log::debug!("Loading URL: {}", url);
     webview.load_url(url);
 }
