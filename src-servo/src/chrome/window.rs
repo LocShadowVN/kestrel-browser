@@ -19,6 +19,57 @@ use crate::internal_pages;
 use crate::storage::database::Database;
 use crate::util::config::Config;
 
+/// HTML cho trang About — song ngữ, English first.
+const ABOUT_HTML: &str = r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>About Kestrel</title>
+<style>
+  :root { --bg: #fafafa; --fg: #1a1a1a; --muted: #6b6b6b; --accent: #0a84ff; --code-bg: #eee; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1c1c1e; --fg: #f5f5f7; --muted: #a0a0a8; --code-bg: #2c2c2e; }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--fg);
+    padding: 48px 24px; max-width: 640px; margin: 0 auto; line-height: 1.6;
+  }
+  h1 { font-size: 36px; font-weight: 700; letter-spacing: -1px; margin-bottom: 4px; }
+  h1 span { color: var(--accent); }
+  h2 { font-size: 18px; font-weight: 600; margin: 32px 0 8px; color: var(--muted); }
+  p { margin: 8px 0; color: var(--fg); }
+  .muted { color: var(--muted); font-size: 14px; }
+  code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px;
+         font-family: "SF Mono", Consolas, monospace; font-size: 13px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  hr { border: none; border-top: 1px solid var(--code-bg); margin: 32px 0; }
+</style>
+</head>
+<body>
+  <h1>Kestrel<span>.</span></h1>
+  <p class="muted">Version 0.1.0-alpha</p>
+
+  <p>A lightweight, pure-Rust, zero-telemetry web browser for Linux,
+     built on the <a href="https://servo.org">Servo engine</a>.</p>
+
+  <p><strong>License:</strong> GNU General Public License v3.0</p>
+  <p><strong>Source:</strong>
+     <a href="https://github.com/LocShadowVN/kestrel-browser">github.com/LocShadowVN/kestrel-browser</a></p>
+
+  <hr>
+
+  <h2>Tiếng Việt</h2>
+  <p>Trình duyệt nhẹ, thuần Rust, không telemetry cho Linux,
+     xây trên <a href="https://servo.org">Servo engine</a>.</p>
+  <p><strong>Giấy phép:</strong> GNU General Public License v3.0</p>
+  <p><strong>Mã nguồn:</strong>
+     <a href="https://github.com/LocShadowVN/kestrel-browser">github.com/LocShadowVN/kestrel-browser</a></p>
+</body>
+</html>"#;
+
 /// State của một tab.
 struct TabEntry {
     webview: WebView,
@@ -39,6 +90,7 @@ impl MainWindow {
             .default_width(1400)
             .default_height(900)
             .build();
+        window.add_css_class("kestrel-window");
 
         let toolbar = Rc::new(Toolbar::new());
         let tabbar = Rc::new(TabBar::new());
@@ -118,6 +170,67 @@ impl MainWindow {
             });
         }
 
+        // ---- Menu: New Tab (loads home in active tab for now) ----
+        {
+            let tabs_c = tabs.clone();
+            let active_c = active_tab.clone();
+            let db_c = db.clone();
+            let config_c = config.clone();
+            toolbar.on_new_tab(move || {
+                let home = config_c.homepage();
+                let idx = active_c.get();
+                if let Some(tab) = tabs_c.borrow().get(idx) {
+                    load_any(&tab.webview, &home, &db_c);
+                }
+            });
+        }
+
+        // ---- Menu: History ----
+        {
+            let tabs_c = tabs.clone();
+            let active_c = active_tab.clone();
+            let db_c = db.clone();
+            toolbar.on_history(move || {
+                let idx = active_c.get();
+                if let Some(tab) = tabs_c.borrow().get(idx) {
+                    load_any(&tab.webview, "kestrel://history", &db_c);
+                }
+            });
+        }
+
+        // ---- Menu: Settings ----
+        {
+            let tabs_c = tabs.clone();
+            let active_c = active_tab.clone();
+            let db_c = db.clone();
+            toolbar.on_settings(move || {
+                let idx = active_c.get();
+                if let Some(tab) = tabs_c.borrow().get(idx) {
+                    load_any(&tab.webview, "kestrel://settings", &db_c);
+                }
+            });
+        }
+
+        // ---- Menu: About ----
+        {
+            let tabs_c = tabs.clone();
+            let active_c = active_tab.clone();
+            toolbar.on_about(move || {
+                let idx = active_c.get();
+                if let Some(tab) = tabs_c.borrow().get(idx) {
+                    tab.webview.load_html(ABOUT_HTML, Some("kestrel://about"));
+                }
+            });
+        }
+
+        // ---- Menu: Quit ----
+        {
+            toolbar.on_quit(|| {
+                log::info!("Quit requested from menu");
+                std::process::exit(0);
+            });
+        }
+
         // ---- Tab switch → update omnibox ----
         {
             let tabs_c = tabs.clone();
@@ -127,10 +240,11 @@ impl MainWindow {
                 active_c.set(page_num as usize);
                 if let Some(tab) = tabs_c.borrow().get(page_num as usize) {
                     if let Some(uri) = tab.webview.uri() {
-                        if !uri.starts_with("data:") {
-                            omnibox_c.set_text(&uri);
-                        } else {
+                        // Bỏ qua data: URL — implementation detail của load_html().
+                        if uri.starts_with("data:") {
                             omnibox_c.set_text("kestrel://home");
+                        } else {
+                            omnibox_c.set_text(&uri);
                         }
                     }
                 }
@@ -260,7 +374,6 @@ impl MainWindow {
                 }
                 if let Some(uri) = wv.uri() {
                     // Bỏ qua data: URL — implementation detail của load_html().
-                    // Giữ omnibox hiển thị kestrel://... thay vì chuỗi dài.
                     if uri.starts_with("data:") {
                         return;
                     }
@@ -297,11 +410,7 @@ impl MainWindow {
         load_any(&webview, url, db);
 
         // Set omnibox text — nếu là trang nội bộ, hiển thị kestrel://
-        if internal_pages::is_internal(url) {
-            toolbar.omnibox().set_text(url);
-        } else {
-            toolbar.omnibox().set_text(url);
-        }
+        toolbar.omnibox().set_text(url);
 
         tabs.borrow_mut().push(TabEntry { webview, page_num, ucm });
         active_tab.set(tab_index);
