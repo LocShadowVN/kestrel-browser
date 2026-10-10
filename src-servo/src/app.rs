@@ -3,6 +3,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use gtk4::Application;
 
+use crate::chrome::style;
 use crate::chrome::window::MainWindow;
 use crate::storage::database::Database;
 use crate::util::config::Config;
@@ -26,6 +27,10 @@ impl KestrelApp {
 
         let db = self.db.clone();
         let config = self.config.clone();
+
+        app.connect_startup(|_app| {
+            style::load();
+        });
 
         app.connect_activate(move |app| {
             let window = MainWindow::new(app, db.clone(), config.clone());
