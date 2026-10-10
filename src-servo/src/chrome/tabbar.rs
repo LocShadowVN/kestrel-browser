@@ -14,15 +14,16 @@ impl TabBar {
         notebook.set_hexpand(true);
         notebook.set_scrollable(true);
         notebook.set_show_border(false);
+        notebook.add_css_class("kestrel-tabbar");
 
         Self { notebook }
     }
 
-    /// Thêm tab mới. Trả về page number.
     pub fn add_tab<W: IsA<Widget>>(&self, content: &W, title: &str) -> u32 {
         let label = Label::new(Some(title));
         label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-        label.set_max_width_chars(24);
+        label.set_width_chars(1);
+        label.set_max_width_chars(20);
         label.set_single_line_mode(true);
 
         let page_num = self.notebook.append_page(content, Some(&label));
@@ -37,7 +38,6 @@ impl TabBar {
         }
     }
 
-    /// Cập nhật title của tab theo page number.
     pub fn set_tab_title(&self, page_num: u32, title: &str) {
         if let Some(child) = self.notebook.nth_page(Some(page_num)) {
             if let Some(tab_label) = self.notebook.tab_label(&child) {
@@ -60,7 +60,6 @@ impl TabBar {
         self.notebook.n_pages() as usize
     }
 
-    /// Signal khi user chuyển tab.
     pub fn on_switch<F: Fn(u32) + 'static>(&self, cb: F) {
         self.notebook.connect_switch_page(move |_, _, page_num| {
             cb(page_num);
