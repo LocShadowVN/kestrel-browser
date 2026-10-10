@@ -1,7 +1,4 @@
-//! MainWindow — layout: toolbar trên, tabbar dưới.
-//!
-//! Quản lý tabs, kết nối signals từ Servo WebView → UI, xử lý điều hướng
-//! đến các trang nội bộ (kestrel://home, kestrel://settings, kestrel://history).
+//! MainWindow — layout: tabbar trên, toolbar dưới, web content dưới cùng.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -15,62 +12,45 @@ use servo_gtk::{LoadEvent, WebView};
 use crate::chrome::tabbar::TabBar;
 use crate::chrome::toolbar::Toolbar;
 use crate::engine::navigation;
-use crate::internal_pages;
+use crate::internal_pages::{self, Page};
 use crate::storage::database::Database;
 use crate::util::config::Config;
 
-/// HTML cho trang About — song ngữ, English first.
 const ABOUT_HTML: &str = r#"<!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<title>About Kestrel</title>
+<head><meta charset="utf-8"><title>About Kestrel</title>
 <style>
-  :root { --bg: #fafafa; --fg: #1a1a1a; --muted: #6b6b6b; --accent: #0a84ff; --code-bg: #eee; }
+  :root { --bg:#fafafa; --fg:#1a1a1a; --muted:#6b6b6b; --accent:#0a84ff; --code:#eee; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #1c1c1e; --fg: #f5f5f7; --muted: #a0a0a8; --code-bg: #2c2c2e; }
+    :root { --bg:#1c1c1e; --fg:#f5f5f7; --muted:#a0a0a8; --code:#2c2c2e; }
   }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: var(--bg); color: var(--fg);
-    padding: 48px 24px; max-width: 640px; margin: 0 auto; line-height: 1.6;
-  }
-  h1 { font-size: 36px; font-weight: 700; letter-spacing: -1px; margin-bottom: 4px; }
-  h1 span { color: var(--accent); }
-  h2 { font-size: 18px; font-weight: 600; margin: 32px 0 8px; color: var(--muted); }
-  p { margin: 8px 0; color: var(--fg); }
-  .muted { color: var(--muted); font-size: 14px; }
-  code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px;
-         font-family: "SF Mono", Consolas, monospace; font-size: 13px; }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  hr { border: none; border-top: 1px solid var(--code-bg); margin: 32px 0; }
-</style>
-</head>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+         background:var(--bg); color:var(--fg); padding:48px 24px;
+         max-width:640px; margin:0 auto; line-height:1.6; }
+  h1 { font-size:36px; font-weight:700; letter-spacing:-1px; margin-bottom:4px; }
+  h1 span { color:var(--accent); }
+  p { margin:10px 0; }
+  .muted { color:var(--muted); font-size:14px; }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  hr { border:none; border-top:1px solid var(--code); margin:32px 0; }
+</style></head>
 <body>
   <h1>Kestrel<span>.</span></h1>
   <p class="muted">Version 0.1.0-alpha</p>
-
   <p>A lightweight, pure-Rust, zero-telemetry web browser for Linux,
      built on the <a href="https://servo.org">Servo engine</a>.</p>
-
   <p><strong>License:</strong> GNU General Public License v3.0</p>
   <p><strong>Source:</strong>
      <a href="https://github.com/LocShadowVN/kestrel-browser">github.com/LocShadowVN/kestrel-browser</a></p>
-
   <hr>
-
-  <h2>Tiếng Việt</h2>
+  <h1 style="font-size:24px;">Tiếng Việt</h1>
   <p>Trình duyệt nhẹ, thuần Rust, không telemetry cho Linux,
      xây trên <a href="https://servo.org">Servo engine</a>.</p>
   <p><strong>Giấy phép:</strong> GNU General Public License v3.0</p>
-  <p><strong>Mã nguồn:</strong>
-     <a href="https://github.com/LocShadowVN/kestrel-browser">github.com/LocShadowVN/kestrel-browser</a></p>
-</body>
-</html>"#;
+</body></html>"#;
 
-/// State của một tab.
 struct TabEntry {
     webview: WebView,
     page_num: u32,
@@ -98,140 +78,148 @@ impl MainWindow {
         let tabs: Rc<RefCell<Vec<TabEntry>>> = Rc::new(RefCell::new(Vec::new()));
         let active_tab: Rc<Cell<usize>> = Rc::new(Cell::new(0));
 
-        // ---- Toolbar: back ----
+        // ---- Toolbar callbacks ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
             toolbar.on_back(move || {
                 let idx = active_c.get();
                 if let Some(tab) = tabs_c.borrow().get(idx) {
-                    log::debug!("Back button pressed for tab {}", idx);
                     tab.webview.go_back();
-                } else {
-                    log::debug!("Back button pressed but no tab at index {}", idx);
                 }
             });
         }
-
-        // ---- Toolbar: forward ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
             toolbar.on_forward(move || {
                 let idx = active_c.get();
                 if let Some(tab) = tabs_c.borrow().get(idx) {
-                    log::debug!("Forward button pressed for tab {}", idx);
                     tab.webview.go_forward();
                 }
             });
         }
-
-        // ---- Toolbar: reload ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
             toolbar.on_reload(move || {
                 let idx = active_c.get();
                 if let Some(tab) = tabs_c.borrow().get(idx) {
-                    log::debug!("Reload button pressed for tab {}", idx);
                     tab.webview.reload();
                 }
             });
         }
-
-        // ---- Omnibox Enter → navigate ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
             let db_c = db.clone();
+            let config_c = config.clone();
             toolbar.omnibox().on_activate(move |text| {
-                log::debug!("Omnibox activated: {}", text);
                 let url = navigation::normalize_url(text);
                 let idx = active_c.get();
                 if let Some(tab) = tabs_c.borrow().get(idx) {
-                    load_any(&tab.webview, &url, &db_c);
+                    load_any(&tab.webview, &url, &db_c, &config_c);
                 }
             });
         }
-
-        // ---- Home button ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
-            let config_c = config.clone();
             let db_c = db.clone();
+            let config_c = config.clone();
             toolbar.on_home(move || {
                 let home = config_c.homepage();
-                log::debug!("Home button pressed, loading {}", home);
                 let idx = active_c.get();
                 if let Some(tab) = tabs_c.borrow().get(idx) {
-                    load_any(&tab.webview, &home, &db_c);
+                    load_any(&tab.webview, &home, &db_c, &config_c);
                 }
             });
         }
 
-        // ---- Menu: New Tab (loads home in active tab for now) ----
+        // ---- Tabbar: nút "+" ----
+        {
+            let tabs_c = tabs.clone();
+            let tabbar_c = tabbar.clone();
+            let toolbar_c = toolbar.clone();
+            let db_c = db.clone();
+            let config_c = config.clone();
+            let active_c = active_tab.clone();
+            tabbar.on_new_tab(move || {
+                let home = config_c.homepage();
+                Self::open_tab(
+                    &tabs_c,
+                    &tabbar_c,
+                    &toolbar_c,
+                    &db_c,
+                    &active_c,
+                    &config_c,
+                    &home,
+                );
+            });
+        }
+
+        // ---- Menu callbacks ----
+        {
+            let tabs_c = tabs.clone();
+            let tabbar_c = tabbar.clone();
+            let toolbar_c = toolbar.clone();
+            let db_c = db.clone();
+            let config_c = config.clone();
+            let active_c = active_tab.clone();
+            toolbar.on_new_tab(move || {
+                let home = config_c.homepage();
+                Self::open_tab(
+                    &tabs_c,
+                    &tabbar_c,
+                    &toolbar_c,
+                    &db_c,
+                    &active_c,
+                    &config_c,
+                    &home,
+                );
+            });
+        }
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
             let db_c = db.clone();
             let config_c = config.clone();
-            toolbar.on_new_tab(move || {
-                let home = config_c.homepage();
-                let idx = active_c.get();
-                if let Some(tab) = tabs_c.borrow().get(idx) {
-                    load_any(&tab.webview, &home, &db_c);
-                }
-            });
-        }
-
-        // ---- Menu: History ----
-        {
-            let tabs_c = tabs.clone();
-            let active_c = active_tab.clone();
-            let db_c = db.clone();
             toolbar.on_history(move || {
                 let idx = active_c.get();
                 if let Some(tab) = tabs_c.borrow().get(idx) {
-                    load_any(&tab.webview, "kestrel://history", &db_c);
+                    load_any(&tab.webview, "kestrel://history", &db_c, &config_c);
                 }
             });
         }
-
-        // ---- Menu: Settings ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
             let db_c = db.clone();
+            let config_c = config.clone();
             toolbar.on_settings(move || {
                 let idx = active_c.get();
                 if let Some(tab) = tabs_c.borrow().get(idx) {
-                    load_any(&tab.webview, "kestrel://settings", &db_c);
+                    load_any(&tab.webview, "kestrel://settings", &db_c, &config_c);
                 }
             });
         }
-
-        // ---- Menu: About ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
             toolbar.on_about(move || {
                 let idx = active_c.get();
                 if let Some(tab) = tabs_c.borrow().get(idx) {
-                    tab.webview.load_html(ABOUT_HTML, Some("kestrel://about"));
+                    tab.webview.load_html(ABOUT_HTML, None);
                 }
             });
         }
-
-        // ---- Menu: Quit ----
         {
             toolbar.on_quit(|| {
-                log::info!("Quit requested from menu");
                 std::process::exit(0);
             });
         }
 
-        // ---- Tab switch → update omnibox ----
+        // ---- Tab switch ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
@@ -240,7 +228,6 @@ impl MainWindow {
                 active_c.set(page_num as usize);
                 if let Some(tab) = tabs_c.borrow().get(page_num as usize) {
                     if let Some(uri) = tab.webview.uri() {
-                        // Bỏ qua data: URL — implementation detail của load_html().
                         if uri.starts_with("data:") {
                             omnibox_c.set_text("kestrel://home");
                         } else {
@@ -251,13 +238,13 @@ impl MainWindow {
             });
         }
 
-        // ---- Layout ----
+        // ---- Layout: tabbar trên, toolbar dưới, content cuối ----
         let vbox = GtkBox::new(Orientation::Vertical, 0);
-        vbox.append(toolbar.widget());
         vbox.append(tabbar.widget());
+        vbox.append(toolbar.widget());
         window.set_child(Some(&vbox));
 
-        // ---- Open first tab after window is mapped ----
+        // ---- Open first tab ----
         {
             let tabs_c = tabs.clone();
             let tabbar_c = tabbar.clone();
@@ -277,6 +264,7 @@ impl MainWindow {
                     &toolbar_c,
                     &db_c,
                     &active_c,
+                    &config_c,
                     &homepage,
                 );
             });
@@ -285,12 +273,14 @@ impl MainWindow {
         Self { window }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn open_tab(
         tabs: &Rc<RefCell<Vec<TabEntry>>>,
         tabbar: &Rc<TabBar>,
         toolbar: &Rc<Toolbar>,
         db: &Rc<Database>,
         active_tab: &Rc<Cell<usize>>,
+        config: &Rc<Config>,
         url: &str,
     ) {
         let ucm = UserContentManager::new();
@@ -304,55 +294,50 @@ impl MainWindow {
         let page_num = tabbar.add_tab(&webview, "Loading...");
         let tab_index = tabs.borrow().len();
 
-        // ---- Message handler ----
+        // Message handler
         {
             let tabs_c = tabs.clone();
             let db_c = db.clone();
+            let config_c = config.clone();
             let active_c = active_tab.clone();
-            ucm.connect_script_message_received(move |_ucm, name, body| {
-                log::info!("Message from page [{}]: {}", name, body);
-                match serde_json::from_str::<serde_json::Value>(body) {
-                    Ok(v) => {
-                        let action = v.get("action").and_then(|a| a.as_str()).unwrap_or("");
-                        log::info!("Action: {}", action);
-                        match action {
-                            "navigate" => {
-                                if let Some(u) = v.get("url").and_then(|u| u.as_str()) {
-                                    let normalized = navigation::normalize_url(u);
-                                    let idx = active_c.get();
-                                    if let Some(tab) = tabs_c.borrow().get(idx) {
-                                        load_any(&tab.webview, &normalized, &db_c);
-                                    }
-                                }
-                            }
-                            "save-settings" => {
-                                if let Some(h) = v.get("homepage").and_then(|x| x.as_str()) {
-                                    let _ = db_c.save_config_item("homepage", h);
-                                }
-                                if let Some(s) = v.get("search_engine").and_then(|x| x.as_str()) {
-                                    let _ = db_c.save_config_item("search_engine", s);
-                                }
-                                if let Some(d) = v.get("dark_theme").and_then(|x| x.as_bool()) {
-                                    let _ = db_c.save_config_item(
-                                        "dark_theme",
-                                        if d { "true" } else { "false" },
-                                    );
-                                }
-                                log::info!("Settings saved from page.");
-                            }
-                            _ => {
-                                log::warn!("Unknown action from page: {}", action);
+            ucm.connect_script_message_received(move |_ucm, _name, body| {
+                log::info!("Message from page: {}", body);
+                let Ok(v) = serde_json::from_str::<serde_json::Value>(body) else {
+                    log::warn!("Invalid JSON: {}", body);
+                    return;
+                };
+                let action = v.get("action").and_then(|a| a.as_str()).unwrap_or("");
+                match action {
+                    "navigate" => {
+                        if let Some(u) = v.get("url").and_then(|u| u.as_str()) {
+                            let normalized = navigation::normalize_url(u);
+                            let idx = active_c.get();
+                            if let Some(tab) = tabs_c.borrow().get(idx) {
+                                load_any(&tab.webview, &normalized, &db_c, &config_c);
                             }
                         }
                     }
-                    Err(e) => {
-                        log::warn!("Invalid JSON from page: {} ({})", body, e);
+                    "save-settings" => {
+                        if let Some(h) = v.get("homepage").and_then(|x| x.as_str()) {
+                            let _ = config_c.set_homepage(h);
+                        }
+                        if let Some(s) = v.get("search_engine").and_then(|x| x.as_str()) {
+                            let _ = config_c.set_search_engine(s);
+                        }
+                        if let Some(l) = v.get("language").and_then(|x| x.as_str()) {
+                            let _ = config_c.set_language(l);
+                        }
+                        if let Some(d) = v.get("dark_theme").and_then(|x| x.as_bool()) {
+                            let _ = config_c.set_dark_theme(d);
+                        }
+                        log::info!("Settings saved.");
                     }
+                    _ => log::warn!("Unknown action: {}", action),
                 }
             });
         }
 
-        // ---- Signal: title changed → update tab label ----
+        // Title change
         {
             let tabbar_c = tabbar.clone();
             webview.connect_title_notify(move |wv| {
@@ -364,7 +349,7 @@ impl MainWindow {
             });
         }
 
-        // ---- Signal: uri changed → update omnibox ----
+        // URI change
         {
             let omnibox_c = toolbar.omnibox().clone();
             let active_c = active_tab.clone();
@@ -373,7 +358,6 @@ impl MainWindow {
                     return;
                 }
                 if let Some(uri) = wv.uri() {
-                    // Bỏ qua data: URL — implementation detail của load_html().
                     if uri.starts_with("data:") {
                         return;
                     }
@@ -382,7 +366,7 @@ impl MainWindow {
             });
         }
 
-        // ---- Signal: load finished → record history ----
+        // History record
         {
             let db_c = db.clone();
             webview.connect_load_changed(move |wv, event| {
@@ -399,20 +383,21 @@ impl MainWindow {
             });
         }
 
-        // ---- Popups ----
+        // Popups
         {
             webview.connect_create_web_view(move |_wv, url| {
                 log::info!("Popup requested: {}", url);
             });
         }
 
-        // ---- Load nội dung ban đầu ----
-        load_any(&webview, url, db);
-
-        // Set omnibox text — nếu là trang nội bộ, hiển thị kestrel://
+        load_any(&webview, url, db, config);
         toolbar.omnibox().set_text(url);
 
-        tabs.borrow_mut().push(TabEntry { webview, page_num, ucm });
+        tabs.borrow_mut().push(TabEntry {
+            webview,
+            page_num,
+            ucm,
+        });
         active_tab.set(tab_index);
     }
 
@@ -421,34 +406,40 @@ impl MainWindow {
     }
 }
 
-/// Load một URL vào WebView, tự động xử lý trang nội bộ.
-fn load_any(webview: &WebView, url: &str, db: &Database) {
-    // Trang tĩnh
-    if let Some(html) = internal_pages::resolve(url) {
-        log::debug!("Loading internal static page: {}", url);
-        webview.load_html(html, Some("kestrel://"));
-        return;
-    }
+/// Load URL, tự xử lý trang nội bộ.
+fn load_any(webview: &WebView, url: &str, db: &Database, config: &Config) {
+    let lang = config.language();
 
-    // Trang động
-    if internal_pages::is_dynamic(url) {
-        log::debug!("Loading internal dynamic page: {}", url);
-        let records = match db.fetch_history(200) {
-            Ok(rows) => rows
+    match internal_pages::classify(url) {
+        Some(Page::Home) => {
+            log::debug!("Loading internal home ({})", lang);
+            let html = internal_pages::home::render(&lang);
+            webview.load_html(&html, None);
+        }
+        Some(Page::Settings) => {
+            log::debug!("Loading internal settings");
+            let html = internal_pages::settings::render(
+                &lang,
+                &config.homepage(),
+                &config.search_engine(),
+                config.dark_theme(),
+            );
+            webview.load_html(&html, None);
+        }
+        Some(Page::History) => {
+            log::debug!("Loading internal history");
+            let records = db
+                .fetch_history(200)
+                .unwrap_or_default()
                 .into_iter()
                 .map(|r| (r.url, r.title, r.timestamp))
-                .collect::<Vec<_>>(),
-            Err(e) => {
-                log::warn!("Failed to fetch history: {}", e);
-                Vec::new()
-            }
-        };
-        let html = internal_pages::history::render(&records);
-        webview.load_html(&html, Some("kestrel://"));
-        return;
+                .collect::<Vec<_>>();
+            let html = internal_pages::history::render(&records);
+            webview.load_html(&html, None);
+        }
+        None => {
+            log::debug!("Loading URL: {}", url);
+            webview.load_url(url);
+        }
     }
-
-    // URL bình thường
-    log::debug!("Loading URL: {}", url);
-    webview.load_url(url);
 }
