@@ -20,6 +20,7 @@ pub struct AppConfig {
     pub search_engine: String,
     pub homepage: String,
     pub dark_theme: bool,
+    pub language: String,
 }
 
 impl Default for AppConfig {
@@ -28,6 +29,7 @@ impl Default for AppConfig {
             search_engine: "https://search.brave.com/search?q=".into(),
             homepage: "kestrel://home".into(),
             dark_theme: true,
+            language: "en".into(),
         }
     }
 }
