@@ -1,11 +1,14 @@
 //! Trang chủ nội bộ — kestrel://home
+//!
+//! Song ngữ Anh-Việt, tiếng Anh là ngôn ngữ chính. Search bar dùng form
+//! submit thay vì JS để không phụ thuộc vào message channel.
 
 pub const HTML: &str = r#"<!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kestrel Home</title>
+<title>Kestrel — Home</title>
 <style>
   :root {
     --bg: #fafafa;
@@ -34,7 +37,7 @@ pub const HTML: &str = r#"<!DOCTYPE html>
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 80px 24px 24px;
+    padding: 72px 24px 24px;
   }
   .logo {
     font-size: 48px;
@@ -65,6 +68,7 @@ pub const HTML: &str = r#"<!DOCTYPE html>
     transition: border-color 0.15s;
   }
   .search input:focus { border-color: var(--accent); }
+
   .cards {
     display: flex;
     flex-wrap: wrap;
@@ -102,21 +106,69 @@ pub const HTML: &str = r#"<!DOCTYPE html>
     color: var(--muted);
     line-height: 1.4;
   }
+
+  .lang-divider {
+    width: 100%;
+    max-width: 720px;
+    margin: 56px 0 32px;
+    border: none;
+    border-top: 1px solid var(--card-border);
+  }
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+    margin-bottom: 8px;
+    align-self: flex-start;
+    max-width: 720px;
+    width: 100%;
+    padding-left: 8px;
+  }
+  .section-tagline {
+    color: var(--muted);
+    font-size: 13px;
+    margin-bottom: 24px;
+  }
+
   .footer {
     margin-top: auto;
-    padding-top: 48px;
+    padding-top: 64px;
     font-size: 12px;
     color: var(--muted);
   }
 </style>
 </head>
 <body>
+  <!-- ===================== EN ===================== -->
   <div class="logo">Kestrel<span>.</span></div>
-  <div class="tagline">Trình duyệt nhẹ, thuần Rust, không telemetry</div>
+  <div class="tagline">Lightweight, pure-Rust, zero-telemetry browser</div>
 
-  <div class="search">
-    <input type="text" id="q" placeholder="Tìm kiếm hoặc nhập URL..." autofocus>
+  <form class="search" action="https://search.brave.com/search" method="get">
+    <input type="text" name="q" placeholder="Search with Brave or enter URL..." autofocus>
+  </form>
+
+  <div class="cards">
+    <a class="card" href="kestrel://history">
+      <div class="card-title">History</div>
+      <div class="card-desc">View pages you have visited</div>
+    </a>
+    <a class="card" href="kestrel://settings">
+      <div class="card-title">Settings</div>
+      <div class="card-desc">Homepage, search engine, appearance</div>
+    </a>
+    <a class="card" href="https://servo.org">
+      <div class="card-title">Servo</div>
+      <div class="card-desc">Learn about the engine behind Kestrel</div>
+    </a>
   </div>
+
+  <!-- ===================== VI ===================== -->
+  <hr class="lang-divider">
+
+  <div class="section-title">Tiếng Việt</div>
+  <div class="section-tagline">Trình duyệt nhẹ, thuần Rust, không telemetry</div>
 
   <div class="cards">
     <a class="card" href="kestrel://history">
@@ -134,23 +186,5 @@ pub const HTML: &str = r#"<!DOCTYPE html>
   </div>
 
   <div class="footer">Kestrel Browser — Phase 1</div>
-
-  <script>
-    document.getElementById('q').addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') {
-        var v = this.value.trim();
-        if (v) {
-          if (window.servoGtk && window.servoGtk.messageHandlers &&
-              window.servoGtk.messageHandlers.kestrel) {
-            window.servoGtk.messageHandlers.kestrel.postMessage(
-              JSON.stringify({ action: 'navigate', url: v })
-            );
-          } else {
-            console.log('servoGtk not available');
-          }
-        }
-      }
-    });
-  </script>
 </body>
 </html>"#;
