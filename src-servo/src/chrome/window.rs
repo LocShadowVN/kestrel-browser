@@ -1,4 +1,7 @@
 //! MainWindow — layout: tabbar trên, toolbar dưới, web content dưới cùng.
+//!
+//! Quản lý tabs, kết nối signals từ Servo WebView → UI, xử lý điều hướng
+//! đến các trang nội bộ (kestrel://home, kestrel://settings, kestrel://history).
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -78,7 +81,7 @@ impl MainWindow {
         let tabs: Rc<RefCell<Vec<TabEntry>>> = Rc::new(RefCell::new(Vec::new()));
         let active_tab: Rc<Cell<usize>> = Rc::new(Cell::new(0));
 
-        // ---- Toolbar callbacks ----
+        // ---- Toolbar: back ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
@@ -89,6 +92,8 @@ impl MainWindow {
                 }
             });
         }
+
+        // ---- Toolbar: forward ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
@@ -99,6 +104,8 @@ impl MainWindow {
                 }
             });
         }
+
+        // ---- Toolbar: reload ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
@@ -109,6 +116,8 @@ impl MainWindow {
                 }
             });
         }
+
+        // ---- Omnibox Enter → navigate ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
@@ -122,6 +131,8 @@ impl MainWindow {
                 }
             });
         }
+
+        // ---- Home button ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
@@ -136,7 +147,7 @@ impl MainWindow {
             });
         }
 
-        // ---- Tabbar: nút "+" ----
+        // ---- Tabbar: nút "+" thêm tab mới ----
         {
             let tabs_c = tabs.clone();
             let tabbar_c = tabbar.clone();
@@ -158,7 +169,7 @@ impl MainWindow {
             });
         }
 
-        // ---- Menu callbacks ----
+        // ---- Menu: New Tab ----
         {
             let tabs_c = tabs.clone();
             let tabbar_c = tabbar.clone();
@@ -179,6 +190,8 @@ impl MainWindow {
                 );
             });
         }
+
+        // ---- Menu: History ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
@@ -191,6 +204,8 @@ impl MainWindow {
                 }
             });
         }
+
+        // ---- Menu: Settings ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
@@ -203,6 +218,8 @@ impl MainWindow {
                 }
             });
         }
+
+        // ---- Menu: About ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
@@ -213,13 +230,16 @@ impl MainWindow {
                 }
             });
         }
+
+        // ---- Menu: Quit ----
         {
             toolbar.on_quit(|| {
+                log::info!("Quit requested");
                 std::process::exit(0);
             });
         }
 
-        // ---- Tab switch ----
+        // ---- Tab switch → update omnibox ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
@@ -244,7 +264,7 @@ impl MainWindow {
         vbox.append(toolbar.widget());
         window.set_child(Some(&vbox));
 
-                // ---- Mở tab đầu tiên NGAY, không đợi window map ----
+        // ---- Mở tab đầu tiên NGAY, không đợi window map ----
         //
         // Trước đây dùng connect_map — nhưng connect_map chạy sau khi window
         // được present, nên user thấy cửa sổ trắng 1-2 giây trước khi Servo
@@ -288,7 +308,7 @@ impl MainWindow {
         let page_num = tabbar.add_tab(&webview, "Loading...");
         let tab_index = tabs.borrow().len();
 
-        // Message handler
+        // ---- Message handler ----
         {
             let tabs_c = tabs.clone();
             let db_c = db.clone();
@@ -297,7 +317,7 @@ impl MainWindow {
             ucm.connect_script_message_received(move |_ucm, _name, body| {
                 log::info!("Message from page: {}", body);
                 let Ok(v) = serde_json::from_str::<serde_json::Value>(body) else {
-                    log::warn!("Invalid JSON: {}", body);
+                    log::warn!("Invalid JSON from page: {}", body);
                     return;
                 };
                 let action = v.get("action").and_then(|a| a.as_str()).unwrap_or("");
@@ -324,14 +344,14 @@ impl MainWindow {
                         if let Some(d) = v.get("dark_theme").and_then(|x| x.as_bool()) {
                             let _ = config_c.set_dark_theme(d);
                         }
-                        log::info!("Settings saved.");
+                        log::info!("Settings saved from page.");
                     }
-                    _ => log::warn!("Unknown action: {}", action),
+                    _ => log::warn!("Unknown action from page: {}", action),
                 }
             });
         }
 
-        // Title change
+        // ---- Signal: title changed → update tab label ----
         {
             let tabbar_c = tabbar.clone();
             webview.connect_title_notify(move |wv| {
@@ -343,7 +363,7 @@ impl MainWindow {
             });
         }
 
-        // URI change
+        // ---- Signal: uri changed → update omnibox ----
         {
             let omnibox_c = toolbar.omnibox().clone();
             let active_c = active_tab.clone();
@@ -360,7 +380,7 @@ impl MainWindow {
             });
         }
 
-        // History record
+        // ---- Signal: load finished → record history ----
         {
             let db_c = db.clone();
             webview.connect_load_changed(move |wv, event| {
@@ -377,15 +397,19 @@ impl MainWindow {
             });
         }
 
-        // Popups
+        // ---- Popups ----
         {
             webview.connect_create_web_view(move |_wv, url| {
                 log::info!("Popup requested: {}", url);
             });
         }
 
-        load_any(&webview, url, db, config);
+        // ---- Set omnibox TRƯỚC khi load ----
+        // User thấy kestrel://home ngay từ đầu thay vì chuỗi trống.
         toolbar.omnibox().set_text(url);
+
+        // ---- Load nội dung ----
+        load_any(&webview, url, db, config);
 
         tabs.borrow_mut().push(TabEntry {
             webview,
@@ -400,7 +424,7 @@ impl MainWindow {
     }
 }
 
-/// Load URL, tự xử lý trang nội bộ.
+/// Load URL vào WebView, tự xử lý trang nội bộ.
 fn load_any(webview: &WebView, url: &str, db: &Database, config: &Config) {
     let lang = config.language();
 
