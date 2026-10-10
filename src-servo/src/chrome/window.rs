@@ -244,30 +244,24 @@ impl MainWindow {
         vbox.append(toolbar.widget());
         window.set_child(Some(&vbox));
 
-        // ---- Open first tab ----
+                // ---- Mở tab đầu tiên NGAY, không đợi window map ----
+        //
+        // Trước đây dùng connect_map — nhưng connect_map chạy sau khi window
+        // được present, nên user thấy cửa sổ trắng 1-2 giây trước khi Servo
+        // runner spawn và render home. Mở tab ngay trong constructor thì
+        // WebView bắt đầu load song song với quá trình GTK show window,
+        // giảm thời gian thấy trắng.
         {
-            let tabs_c = tabs.clone();
-            let tabbar_c = tabbar.clone();
-            let toolbar_c = toolbar.clone();
-            let db_c = db.clone();
-            let config_c = config.clone();
-            let active_c = active_tab.clone();
-
-            window.connect_map(move |_| {
-                if !tabs_c.borrow().is_empty() {
-                    return;
-                }
-                let homepage = config_c.homepage();
-                Self::open_tab(
-                    &tabs_c,
-                    &tabbar_c,
-                    &toolbar_c,
-                    &db_c,
-                    &active_c,
-                    &config_c,
-                    &homepage,
-                );
-            });
+            let homepage = config.homepage();
+            Self::open_tab(
+                &tabs,
+                &tabbar,
+                &toolbar,
+                &db,
+                &active_tab,
+                &config,
+                &homepage,
+            );
         }
 
         Self { window }
