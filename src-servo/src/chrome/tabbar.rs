@@ -1,10 +1,11 @@
-//! TabBar — wrapper quanh GTK4 Notebook.
+//! TabBar — wrapper quanh GTK4 Notebook, có nút "+" thêm tab mới.
 
 use gtk4::prelude::*;
-use gtk4::{Label, Notebook, Widget};
+use gtk4::{Button, Label, Notebook, PackType, Widget};
 
 pub struct TabBar {
     notebook: Notebook,
+    new_tab_button: Button,
 }
 
 impl TabBar {
@@ -16,7 +17,16 @@ impl TabBar {
         notebook.set_show_border(false);
         notebook.add_css_class("kestrel-tabbar");
 
-        Self { notebook }
+        // Nút "+" — GTK4 cho phép gắn widget vào tab area qua set_action_widget.
+        let new_tab_button = Button::from_icon_name("tab-new-symbolic");
+        new_tab_button.set_tooltip_text(Some("New tab"));
+        new_tab_button.add_css_class("kestrel-new-tab-button");
+        notebook.set_action_widget(&new_tab_button, PackType::End);
+
+        Self {
+            notebook,
+            new_tab_button,
+        }
     }
 
     pub fn add_tab<W: IsA<Widget>>(&self, content: &W, title: &str) -> u32 {
@@ -64,6 +74,10 @@ impl TabBar {
         self.notebook.connect_switch_page(move |_, _, page_num| {
             cb(page_num);
         });
+    }
+
+    pub fn on_new_tab<F: Fn() + 'static>(&self, cb: F) {
+        self.new_tab_button.connect_clicked(move |_| cb());
     }
 
     pub fn widget(&self) -> &Notebook {
