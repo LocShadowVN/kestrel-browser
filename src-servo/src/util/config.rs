@@ -24,6 +24,9 @@ impl Config {
         if let Some(v) = db.load_config_item("dark_theme") {
             cached.dark_theme = v == "true";
         }
+        if let Some(v) = db.load_config_item("language") {
+            cached.language = v;
+        }
         Self {
             db,
             cached: RefCell::new(cached),
@@ -40,6 +43,10 @@ impl Config {
 
     pub fn dark_theme(&self) -> bool {
         self.cached.borrow().dark_theme
+    }
+
+    pub fn language(&self) -> String {
+        self.cached.borrow().language.clone()
     }
 
     pub fn set_homepage(&self, value: &str) -> Result<(), String> {
@@ -64,6 +71,15 @@ impl Config {
             .save_config_item("dark_theme", s)
             .map_err(|e| e.to_string())?;
         self.cached.borrow_mut().dark_theme = value;
+        Ok(())
+    }
+
+    pub fn set_language(&self, value: &str) -> Result<(), String> {
+        let v = if value == "vi" { "vi" } else { "en" };
+        self.db
+            .save_config_item("language", v)
+            .map_err(|e| e.to_string())?;
+        self.cached.borrow_mut().language = v.to_string();
         Ok(())
     }
 }
