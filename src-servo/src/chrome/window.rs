@@ -1,7 +1,4 @@
-//! MainWindow — layout: tabbar trên, toolbar dưới, web content dưới cùng.
-//!
-//! Quản lý tabs, kết nối signals từ Servo WebView → UI, xử lý điều hướng
-//! đến các trang nội bộ (kestrel://home, kestrel://settings, kestrel://history).
+//! MainWindow — layout: tabbar trên cùng, toolbar dưới, web content cuối.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -147,7 +144,7 @@ impl MainWindow {
             });
         }
 
-        // ---- Tabbar: nút "+" thêm tab mới ----
+        // ---- Tabbar: nút "+" ----
         {
             let tabs_c = tabs.clone();
             let tabbar_c = tabbar.clone();
@@ -158,13 +155,7 @@ impl MainWindow {
             tabbar.on_new_tab(move || {
                 let home = config_c.homepage();
                 Self::open_tab(
-                    &tabs_c,
-                    &tabbar_c,
-                    &toolbar_c,
-                    &db_c,
-                    &active_c,
-                    &config_c,
-                    &home,
+                    &tabs_c, &tabbar_c, &toolbar_c, &db_c, &active_c, &config_c, &home,
                 );
             });
         }
@@ -180,13 +171,7 @@ impl MainWindow {
             toolbar.on_new_tab(move || {
                 let home = config_c.homepage();
                 Self::open_tab(
-                    &tabs_c,
-                    &tabbar_c,
-                    &toolbar_c,
-                    &db_c,
-                    &active_c,
-                    &config_c,
-                    &home,
+                    &tabs_c, &tabbar_c, &toolbar_c, &db_c, &active_c, &config_c, &home,
                 );
             });
         }
@@ -234,7 +219,6 @@ impl MainWindow {
         // ---- Menu: Quit ----
         {
             toolbar.on_quit(|| {
-                log::info!("Quit requested");
                 std::process::exit(0);
             });
         }
@@ -258,29 +242,17 @@ impl MainWindow {
             });
         }
 
-        // ---- Layout: tabbar trên, toolbar dưới, content cuối ----
+        // ---- Layout: TABBAR TRÊN CÙNG, TOOLBAR DƯỚI (giống Brave) ----
         let vbox = GtkBox::new(Orientation::Vertical, 0);
         vbox.append(tabbar.widget());
         vbox.append(toolbar.widget());
         window.set_child(Some(&vbox));
 
-        // ---- Mở tab đầu tiên NGAY, không đợi window map ----
-        //
-        // Trước đây dùng connect_map — nhưng connect_map chạy sau khi window
-        // được present, nên user thấy cửa sổ trắng 1-2 giây trước khi Servo
-        // runner spawn và render home. Mở tab ngay trong constructor thì
-        // WebView bắt đầu load song song với quá trình GTK show window,
-        // giảm thời gian thấy trắng.
+        // ---- Mở tab đầu tiên ngay ----
         {
             let homepage = config.homepage();
             Self::open_tab(
-                &tabs,
-                &tabbar,
-                &toolbar,
-                &db,
-                &active_tab,
-                &config,
-                &homepage,
+                &tabs, &tabbar, &toolbar, &db, &active_tab, &config, &homepage,
             );
         }
 
@@ -305,8 +277,20 @@ impl MainWindow {
         webview.set_hexpand(true);
         webview.set_vexpand(true);
 
-        let page_num = tabbar.add_tab(&webview, "Loading...");
+        let page_num_holder: Rc<Cell<u32>> = Rc::new(Cell::new(0));
         let tab_index = tabs.borrow().len();
+
+        let page_num = {
+            let tabbar_c = tabbar.clone();
+            let tabs_c = tabs.clone();
+            let holder_c = page_num_holder.clone();
+            tabbar.add_tab(&webview, "Loading...", move || {
+                let pn = holder_c.get();
+                tabbar_c.close_tab(pn);
+                tabs_c.borrow_mut().retain(|t| t.page_num != pn);
+            })
+        };
+        page_num_holder.set(page_num);
 
         // ---- Message handler ----
         {
@@ -351,7 +335,7 @@ impl MainWindow {
             });
         }
 
-        // ---- Signal: title changed → update tab label ----
+        // ---- Title changed ----
         {
             let tabbar_c = tabbar.clone();
             webview.connect_title_notify(move |wv| {
@@ -363,7 +347,7 @@ impl MainWindow {
             });
         }
 
-        // ---- Signal: uri changed → update omnibox ----
+        // ---- URI changed ----
         {
             let omnibox_c = toolbar.omnibox().clone();
             let active_c = active_tab.clone();
@@ -380,7 +364,7 @@ impl MainWindow {
             });
         }
 
-        // ---- Signal: load finished → record history ----
+        // ---- Load finished → history ----
         {
             let db_c = db.clone();
             webview.connect_load_changed(move |wv, event| {
@@ -404,12 +388,13 @@ impl MainWindow {
             });
         }
 
-        // ---- Set omnibox TRƯỚC khi load ----
-        // User thấy kestrel://home ngay từ đầu thay vì chuỗi trống.
+        // ---- Omnibox + load ----
         toolbar.omnibox().set_text(url);
-
-        // ---- Load nội dung ----
         load_any(&webview, url, db, config);
+
+        if url.starts_with("kestrel://") {
+            tabbar.set_tab_favicon(page_num, "web-browser-symbolic");
+        }
 
         tabs.borrow_mut().push(TabEntry {
             webview,
@@ -424,18 +409,22 @@ impl MainWindow {
     }
 }
 
-/// Load URL vào WebView, tự xử lý trang nội bộ.
+/// Load URL vào WebView. Xử lý trang nội bộ + query string save/restore.
 fn load_any(webview: &WebView, url: &str, db: &Database, config: &Config) {
     let lang = config.language();
 
+    if let Some(q) = internal_pages::query_string(url) {
+        if internal_pages::classify(url) == Some(Page::Settings) {
+            apply_settings_query(q, config);
+        }
+    }
+
     match internal_pages::classify(url) {
         Some(Page::Home) => {
-            log::debug!("Loading internal home ({})", lang);
             let html = internal_pages::home::render(&lang);
             webview.load_html(&html, None);
         }
         Some(Page::Settings) => {
-            log::debug!("Loading internal settings");
             let html = internal_pages::settings::render(
                 &lang,
                 &config.homepage(),
@@ -445,7 +434,6 @@ fn load_any(webview: &WebView, url: &str, db: &Database, config: &Config) {
             webview.load_html(&html, None);
         }
         Some(Page::History) => {
-            log::debug!("Loading internal history");
             let records = db
                 .fetch_history(200)
                 .unwrap_or_default()
@@ -456,8 +444,39 @@ fn load_any(webview: &WebView, url: &str, db: &Database, config: &Config) {
             webview.load_html(&html, None);
         }
         None => {
-            log::debug!("Loading URL: {}", url);
             webview.load_url(url);
         }
     }
+}
+
+/// Fallback: parse query string `kestrel://settings?...` và lưu vào config.
+fn apply_settings_query(query: &str, config: &Config) {
+    use std::collections::HashMap;
+
+    let params: HashMap<String, String> = url::form_urlencoded::parse(query.as_bytes())
+        .into_owned()
+        .collect();
+
+    if params.contains_key("reset") {
+        let _ = config.set_homepage("kestrel://home");
+        let _ = config.set_search_engine("https://search.brave.com/search?q=");
+        let _ = config.set_language("en");
+        let _ = config.set_dark_theme(false);
+        log::info!("Settings reset via query");
+        return;
+    }
+
+    if let Some(h) = params.get("homepage") {
+        let _ = config.set_homepage(h);
+    }
+    if let Some(s) = params.get("search") {
+        let _ = config.set_search_engine(s);
+    }
+    if let Some(l) = params.get("language") {
+        let _ = config.set_language(l);
+    }
+    if let Some(d) = params.get("dark") {
+        let _ = config.set_dark_theme(d == "true");
+    }
+    log::info!("Settings applied from query");
 }
