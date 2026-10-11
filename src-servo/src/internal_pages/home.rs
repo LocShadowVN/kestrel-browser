@@ -1,13 +1,10 @@
 //! Trang chủ nội bộ — kestrel://home
-//!
-//! Song ngữ Anh-Việt, mặc định tiếng Anh. Search bar dùng form GET,
-//! không phụ thuộc message channel.
+
+use crate::internal_pages::NAV_SHIM;
 
 pub fn render(lang: &str) -> String {
-    match lang {
-        "vi" => VI.to_string(),
-        _ => EN.to_string(),
-    }
+    let base = if lang == "vi" { VI } else { EN };
+    base.replace("<!-- SHIM -->", NAV_SHIM)
 }
 
 const EN: &str = r#"<!DOCTYPE html>
@@ -37,7 +34,7 @@ const EN: &str = r#"<!DOCTYPE html>
            justify-content:center; margin:-8px; }
   .card { flex:1 1 180px; max-width:220px; margin:8px; padding:20px;
           background:var(--card); border:1px solid var(--border);
-          border-radius:12px; text-decoration:none; color:var(--fg); }
+          border-radius:12px; text-decoration:none; color:var(--fg); cursor:pointer; }
   .card:hover { border-color:var(--accent); }
   .card-title { font-size:15px; font-weight:600; margin-bottom:4px; }
   .card-desc { font-size:13px; color:var(--muted); line-height:1.4; }
@@ -47,12 +44,14 @@ const EN: &str = r#"<!DOCTYPE html>
 <body>
   <div class="logo">Kestrel<span>.</span></div>
   <div class="tagline">Lightweight, pure-Rust, zero-telemetry browser</div>
-
   <form action="https://search.brave.com/search" method="get">
     <input type="text" name="q" placeholder="Search with Brave or enter URL..." autofocus>
   </form>
-
   <div class="cards">
+    <a class="card" href="kestrel://bookmarks">
+      <div class="card-title">Bookmarks</div>
+      <div class="card-desc">Your saved pages</div>
+    </a>
     <a class="card" href="kestrel://history">
       <div class="card-title">History</div>
       <div class="card-desc">View pages you have visited</div>
@@ -66,8 +65,8 @@ const EN: &str = r#"<!DOCTYPE html>
       <div class="card-desc">Learn about the engine behind Kestrel</div>
     </a>
   </div>
-
   <div class="footer">Kestrel Browser — Phase 1</div>
+  <script><!-- SHIM --></script>
 </body>
 </html>"#;
 
@@ -98,7 +97,7 @@ const VI: &str = r#"<!DOCTYPE html>
            justify-content:center; margin:-8px; }
   .card { flex:1 1 180px; max-width:220px; margin:8px; padding:20px;
           background:var(--card); border:1px solid var(--border);
-          border-radius:12px; text-decoration:none; color:var(--fg); }
+          border-radius:12px; text-decoration:none; color:var(--fg); cursor:pointer; }
   .card:hover { border-color:var(--accent); }
   .card-title { font-size:15px; font-weight:600; margin-bottom:4px; }
   .card-desc { font-size:13px; color:var(--muted); line-height:1.4; }
@@ -108,12 +107,14 @@ const VI: &str = r#"<!DOCTYPE html>
 <body>
   <div class="logo">Kestrel<span>.</span></div>
   <div class="tagline">Trình duyệt nhẹ, thuần Rust, không telemetry</div>
-
   <form action="https://search.brave.com/search" method="get">
     <input type="text" name="q" placeholder="Tìm kiếm với Brave hoặc nhập URL..." autofocus>
   </form>
-
   <div class="cards">
+    <a class="card" href="kestrel://bookmarks">
+      <div class="card-title">Bookmark</div>
+      <div class="card-desc">Trang đã lưu</div>
+    </a>
     <a class="card" href="kestrel://history">
       <div class="card-title">Lịch sử</div>
       <div class="card-desc">Xem các trang đã truy cập</div>
@@ -127,7 +128,7 @@ const VI: &str = r#"<!DOCTYPE html>
       <div class="card-desc">Tìm hiểu về engine đằng sau Kestrel</div>
     </a>
   </div>
-
   <div class="footer">Kestrel Browser — Phase 1</div>
+  <script><!-- SHIM --></script>
 </body>
 </html>"#;
