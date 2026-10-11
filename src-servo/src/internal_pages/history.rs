@@ -1,15 +1,14 @@
 //! Trang lịch sử nội bộ — kestrel://history
 
+use crate::internal_pages::NAV_SHIM;
+
 pub fn render(records: &[(String, String, Option<String>)]) -> String {
     let mut rows = String::new();
     for (url, title, ts) in records {
         let ts_display = ts.as_deref().unwrap_or("");
         rows.push_str(&format!(
             r#"<tr><td class="title">{}</td><td class="url"><a href="{}">{}</a></td><td class="time">{}</td></tr>"#,
-            escape(title),
-            escape(url),
-            escape(url),
-            escape(ts_display),
+            escape(title), escape(url), escape(url), escape(ts_display),
         ));
     }
     if rows.is_empty() {
@@ -55,17 +54,16 @@ pub fn render(records: &[(String, String, Option<String>)]) -> String {
       <tbody>{rows}</tbody>
     </table>
   </div>
+  <script>{shim}</script>
 </body>
 </html>"#,
         count = records.len(),
-        rows = rows
+        rows = rows,
+        shim = NAV_SHIM,
     )
 }
 
 fn escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+        .replace('"', "&quot;").replace('\'', "&#39;")
 }
