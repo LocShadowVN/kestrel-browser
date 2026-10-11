@@ -10,7 +10,7 @@ pub struct Omnibox {
 impl Omnibox {
     pub fn new() -> Self {
         let entry = Entry::builder()
-            .placeholder_text("Tìm kiếm hoặc nhập URL...")
+            .placeholder_text("Search or enter URL...")
             .hexpand(true)
             .build();
         entry.add_css_class("kestrel-omnibox");
