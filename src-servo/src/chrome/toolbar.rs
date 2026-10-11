@@ -1,4 +1,4 @@
-//! Toolbar — navigation buttons + omnibox + hamburger menu.
+//! Toolbar — nav + omnibox + bookmark + home + menu.
 
 use std::rc::Rc;
 
@@ -14,9 +14,11 @@ pub struct Toolbar {
     forward: Button,
     reload: Button,
     home: Button,
+    bookmark: Button,
     menu_new_tab: Button,
     menu_history: Button,
     menu_settings: Button,
+    menu_bookmarks: Button,
     menu_about: Button,
     menu_quit: Button,
     #[allow(dead_code)]
@@ -35,9 +37,11 @@ impl Toolbar {
 
         let omnibox = Rc::new(Omnibox::new());
 
+        let bookmark = make_icon_button("user-bookmarks-symbolic", "Bookmark this page");
         let home = make_icon_button("go-home-symbolic", "Home");
 
         let menu_new_tab = menu_item("New Tab");
+        let menu_bookmarks = menu_item("Bookmarks");
         let menu_history = menu_item("History");
         let menu_settings = menu_item("Settings");
         let menu_about = menu_item("About");
@@ -46,6 +50,7 @@ impl Toolbar {
         let menu_box = GtkBox::new(Orientation::Vertical, 0);
         menu_box.add_css_class("kestrel-menu");
         menu_box.append(&menu_new_tab);
+        menu_box.append(&menu_bookmarks);
         menu_box.append(&menu_history);
         menu_box.append(&menu_settings);
         let sep = Separator::new(Orientation::Horizontal);
@@ -68,65 +73,35 @@ impl Toolbar {
         container.append(&forward);
         container.append(&reload);
         container.append(omnibox.widget());
+        container.append(&bookmark);
         container.append(&home);
         container.append(&menu);
 
         Self {
-            container,
-            omnibox,
-            back,
-            forward,
-            reload,
-            home,
-            menu_new_tab,
-            menu_history,
-            menu_settings,
-            menu_about,
-            menu_quit,
-            menu,
+            container, omnibox, back, forward, reload, home, bookmark,
+            menu_new_tab, menu_history, menu_settings, menu_bookmarks,
+            menu_about, menu_quit, menu,
         }
     }
 
-    pub fn omnibox(&self) -> &Rc<Omnibox> {
-        &self.omnibox
-    }
-    pub fn on_back<F: Fn() + 'static>(&self, cb: F) {
-        self.back.connect_clicked(move |_| cb());
-    }
-    pub fn on_forward<F: Fn() + 'static>(&self, cb: F) {
-        self.forward.connect_clicked(move |_| cb());
-    }
-    pub fn on_reload<F: Fn() + 'static>(&self, cb: F) {
-        self.reload.connect_clicked(move |_| cb());
-    }
-    pub fn on_home<F: Fn() + 'static>(&self, cb: F) {
-        self.home.connect_clicked(move |_| cb());
-    }
-    pub fn on_new_tab<F: Fn() + 'static>(&self, cb: F) {
-        self.menu_new_tab.connect_clicked(move |_| cb());
-    }
-    pub fn on_history<F: Fn() + 'static>(&self, cb: F) {
-        self.menu_history.connect_clicked(move |_| cb());
-    }
-    pub fn on_settings<F: Fn() + 'static>(&self, cb: F) {
-        self.menu_settings.connect_clicked(move |_| cb());
-    }
-    pub fn on_about<F: Fn() + 'static>(&self, cb: F) {
-        self.menu_about.connect_clicked(move |_| cb());
-    }
-    pub fn on_quit<F: Fn() + 'static>(&self, cb: F) {
-        self.menu_quit.connect_clicked(move |_| cb());
-    }
+    pub fn omnibox(&self) -> &Rc<Omnibox> { &self.omnibox }
+    pub fn on_back<F: Fn() + 'static>(&self, cb: F) { self.back.connect_clicked(move |_| cb()); }
+    pub fn on_forward<F: Fn() + 'static>(&self, cb: F) { self.forward.connect_clicked(move |_| cb()); }
+    pub fn on_reload<F: Fn() + 'static>(&self, cb: F) { self.reload.connect_clicked(move |_| cb()); }
+    pub fn on_home<F: Fn() + 'static>(&self, cb: F) { self.home.connect_clicked(move |_| cb()); }
+    pub fn on_bookmark<F: Fn() + 'static>(&self, cb: F) { self.bookmark.connect_clicked(move |_| cb()); }
+    pub fn on_new_tab<F: Fn() + 'static>(&self, cb: F) { self.menu_new_tab.connect_clicked(move |_| cb()); }
+    pub fn on_history<F: Fn() + 'static>(&self, cb: F) { self.menu_history.connect_clicked(move |_| cb()); }
+    pub fn on_settings<F: Fn() + 'static>(&self, cb: F) { self.menu_settings.connect_clicked(move |_| cb()); }
+    pub fn on_bookmarks<F: Fn() + 'static>(&self, cb: F) { self.menu_bookmarks.connect_clicked(move |_| cb()); }
+    pub fn on_about<F: Fn() + 'static>(&self, cb: F) { self.menu_about.connect_clicked(move |_| cb()); }
+    pub fn on_quit<F: Fn() + 'static>(&self, cb: F) { self.menu_quit.connect_clicked(move |_| cb()); }
 
-    pub fn widget(&self) -> &GtkBox {
-        &self.container
-    }
+    pub fn widget(&self) -> &GtkBox { &self.container }
 }
 
 impl Default for Toolbar {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 fn make_icon_button(icon_name: &str, tooltip: &str) -> Button {
