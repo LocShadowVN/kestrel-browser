@@ -151,3 +151,18 @@ pub fn load() {
         );
     }
 }
+/* Adblock menu labels */
+.kestrel-menu-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #7a7a85;
+    padding: 6px 12px 4px;
+}
+.kestrel-menu-desc {
+    font-size: 11px;
+    color: #8a8a95;
+    padding: 0 12px 8px;
+    line-height: 1.3;
+}
