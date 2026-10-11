@@ -1,19 +1,12 @@
 //! Polyfill JavaScript cho Servo.
 //!
 //! Mỗi polyfill dùng feature-detection: chỉ định nghĩa nếu API gốc chưa có.
-//! Danh sách tập trung vào các API ES2021-ES2024 mà Servo chưa implement tại
-//! revision hiện tại, và các API được framework hiện đại (React, Vue, Svelte)
-//! sử dụng rộng rãi.
+//! Danh sách tập trung vào các API ES2020-ES2024 mà Servo chưa implement.
 //!
-//! KHÔNG thêm polyfill cho `structuredClone` vì implementation bằng JSON làm
-//! mất Date, Map, Set, RegExp và không xử lý circular reference — nguy hiểm
-//! hơn là để trang tự xử lý.
-//!
-//! KHÔNG thêm polyfill cho `ResizeObserver` / `IntersectionObserver` vì chúng
-//! cần layout engine của trình duyệt để hoạt động đúng; polyfill sai semantics
-//! gây hại nhiều hơn lợi.
+//! KHÔNG polyfill: `structuredClone` (mất Date/Map/Set/RegExp),
+//! `ResizeObserver`/`IntersectionObserver` (cần layout engine),
+//! `Element.animate()` (cần Web Animations engine).
 
-/// Script polyfill, được inject vào mọi trang qua `UserContentManager`.
 pub const POLYFILL_SCRIPT: &str = r#"
 (function () {
     'use strict';
@@ -29,9 +22,20 @@ pub const POLYFILL_SCRIPT: &str = r#"
                 });
                 return { promise: promise, resolve: resolve, reject: reject };
             },
-            writable: true,
-            configurable: true,
+            writable: true, configurable: true,
         });
+    }
+
+    // ---- queueMicrotask() — cần cho framework async ----
+    if (typeof queueMicrotask !== 'function') {
+        globalThis.queueMicrotask = function (cb) {
+            if (typeof cb !== 'function') {
+                throw new TypeError('queueMicrotask requires a function');
+            }
+            Promise.resolve().then(cb).catch(function (e) {
+                setTimeout(function () { throw e; }, 0);
+            });
+        };
     }
 
     // ---- Object.hasOwn() — ES2022 ----
@@ -43,8 +47,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
                 }
                 return Object.prototype.hasOwnProperty.call(Object(obj), prop);
             },
-            writable: true,
-            configurable: true,
+            writable: true, configurable: true,
         });
     }
 
@@ -58,8 +61,52 @@ pub const POLYFILL_SCRIPT: &str = r#"
                 if (k < 0 || k >= len) return undefined;
                 return this[k];
             },
-            writable: true,
-            configurable: true,
+            writable: true, configurable: true,
+        });
+    }
+
+    // ---- Array.prototype.flat() — ES2019 ----
+    if (typeof Array.prototype.flat !== 'function') {
+        Object.defineProperty(Array.prototype, 'flat', {
+            value: function (depth) {
+                var d = depth === undefined ? 1 : Math.trunc(depth);
+                var result = [];
+                (function flatten(arr, level) {
+                    for (var i = 0; i < arr.length; i++) {
+                        if (Array.isArray(arr[i]) && level > 0) {
+                            flatten(arr[i], level - 1);
+                        } else if (i in arr) {
+                            result.push(arr[i]);
+                        }
+                    }
+                })(this, d);
+                return result;
+            },
+            writable: true, configurable: true,
+        });
+    }
+
+    // ---- Array.prototype.flatMap() — ES2019 ----
+    if (typeof Array.prototype.flatMap !== 'function') {
+        Object.defineProperty(Array.prototype, 'flatMap', {
+            value: function (cb, thisArg) {
+                if (typeof cb !== 'function') {
+                    throw new TypeError('flatMap requires a function');
+                }
+                var result = [];
+                for (var i = 0; i < this.length; i++) {
+                    if (i in this) {
+                        var val = cb.call(thisArg, this[i], i, this);
+                        if (Array.isArray(val)) {
+                            for (var j = 0; j < val.length; j++) result.push(val[j]);
+                        } else {
+                            result.push(val);
+                        }
+                    }
+                }
+                return result;
+            },
+            writable: true, configurable: true,
         });
     }
 
@@ -75,8 +122,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
                 }
                 return undefined;
             },
-            writable: true,
-            configurable: true,
+            writable: true, configurable: true,
         });
     }
 
@@ -92,8 +138,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
                 }
                 return -1;
             },
-            writable: true,
-            configurable: true,
+            writable: true, configurable: true,
         });
     }
 
@@ -111,12 +156,25 @@ pub const POLYFILL_SCRIPT: &str = r#"
                 var escaped = String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                 return str.replace(new RegExp(escaped, 'g'), replacement);
             },
-            writable: true,
-            configurable: true,
+            writable: true, configurable: true,
         });
     }
 
-    // ---- crypto.randomUUID() — dùng getRandomValues làm nguồn ----
+    // ---- Object.fromEntries() — ES2019 ----
+    if (typeof Object.fromEntries !== 'function') {
+        Object.defineProperty(Object, 'fromEntries', {
+            value: function (iterable) {
+                var obj = {};
+                for (var i = 0; i < iterable.length; i++) {
+                    obj[iterable[i][0]] = iterable[i][1];
+                }
+                return obj;
+            },
+            writable: true, configurable: true,
+        });
+    }
+
+    // ---- crypto.randomUUID() — fallback qua getRandomValues ----
     if (
         typeof crypto !== 'undefined' &&
         typeof crypto.randomUUID !== 'function' &&
@@ -140,9 +198,30 @@ pub const POLYFILL_SCRIPT: &str = r#"
                     hex.slice(10, 16).join('')
                 );
             },
-            writable: true,
-            configurable: true,
+            writable: true, configurable: true,
         });
     }
+
+    // ---- requestIdleCallback() — scheduler API ----
+    // Polyfill tối thiểu: dùng setTimeout, timeRemaining() trả về budget cố định.
+    if (typeof requestIdleCallback !== 'function') {
+        globalThis.requestIdleCallback = function (cb) {
+            var start = Date.now();
+            var handle = setTimeout(function () {
+                cb({
+                    didTimeout: false,
+                    timeRemaining: function () {
+                        return Math.max(0, 50 - (Date.now() - start));
+                    },
+                });
+            }, 1);
+            return handle;
+        };
+        globalThis.cancelIdleCallback = function (handle) {
+            clearTimeout(handle);
+        };
+    }
+
+    console.log('[Kestrel] polyfills loaded');
 })();
 "#;
