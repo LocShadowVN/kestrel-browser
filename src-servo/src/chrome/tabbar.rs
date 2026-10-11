@@ -1,11 +1,22 @@
-//! TabBar — wrapper quanh GTK4 Notebook, có nút "+" thêm tab mới.
+//! TabBar — wrapper quanh GTK4 Notebook, custom tab widget giống Brave.
+
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use gtk4::prelude::*;
-use gtk4::{Button, Label, Notebook, PackType, Widget};
+use gtk4::{Button, Notebook, PackType, Widget};
+
+use crate::chrome::tab_widget::TabWidget;
+
+struct TabMeta {
+    widget: Rc<TabWidget>,
+    page_num: u32,
+}
 
 pub struct TabBar {
     notebook: Notebook,
     new_tab_button: Button,
+    tabs: RefCell<Vec<Rc<TabMeta>>>,
 }
 
 impl TabBar {
@@ -17,7 +28,6 @@ impl TabBar {
         notebook.set_show_border(false);
         notebook.add_css_class("kestrel-tabbar");
 
-        // Nút "+" — GTK4 cho phép gắn widget vào tab area qua set_action_widget.
         let new_tab_button = Button::from_icon_name("tab-new-symbolic");
         new_tab_button.set_tooltip_text(Some("New tab"));
         new_tab_button.add_css_class("kestrel-new-tab-button");
@@ -26,35 +36,45 @@ impl TabBar {
         Self {
             notebook,
             new_tab_button,
+            tabs: RefCell::new(Vec::new()),
         }
     }
 
-    pub fn add_tab<W: IsA<Widget>>(&self, content: &W, title: &str) -> u32 {
-        let label = Label::new(Some(title));
-        label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-        label.set_width_chars(1);
-        label.set_max_width_chars(20);
-        label.set_single_line_mode(true);
+    pub fn add_tab<W, F>(&self, content: &W, title: &str, on_close: F) -> u32
+    where
+        W: IsA<Widget>,
+        F: Fn() + 'static,
+    {
+        let tab_widget = Rc::new(TabWidget::new(title, on_close));
+        let page_num = self
+            .notebook
+            .append_page(content, Some(tab_widget.widget()));
 
-        let page_num = self.notebook.append_page(content, Some(&label));
+        self.tabs.borrow_mut().push(Rc::new(TabMeta {
+            widget: tab_widget,
+            page_num,
+        }));
+
         self.notebook.set_current_page(Some(page_num));
         page_num
     }
 
-    pub fn close_tab(&self, index: usize) {
-        let page_num = index as u32;
+    pub fn close_tab(&self, page_num: u32) {
         if self.notebook.nth_page(Some(page_num)).is_some() {
             self.notebook.remove_page(Some(page_num));
         }
+        self.tabs.borrow_mut().retain(|t| t.page_num != page_num);
     }
 
     pub fn set_tab_title(&self, page_num: u32, title: &str) {
-        if let Some(child) = self.notebook.nth_page(Some(page_num)) {
-            if let Some(tab_label) = self.notebook.tab_label(&child) {
-                if let Some(label) = tab_label.downcast_ref::<Label>() {
-                    label.set_text(title);
-                }
-            }
+        if let Some(meta) = self.tabs.borrow().iter().find(|t| t.page_num == page_num) {
+            meta.widget.set_title(title);
+        }
+    }
+
+    pub fn set_tab_favicon(&self, page_num: u32, icon_name: &str) {
+        if let Some(meta) = self.tabs.borrow().iter().find(|t| t.page_num == page_num) {
+            meta.widget.set_favicon_from_icon_name(icon_name);
         }
     }
 
