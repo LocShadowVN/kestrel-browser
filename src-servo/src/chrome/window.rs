@@ -1,4 +1,4 @@
-//! MainWindow — layout: tabbar trên cùng, toolbar dưới, web content cuối.
+//! MainWindow — layout Brave: tab strip → toolbar → content.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -78,43 +78,34 @@ impl MainWindow {
         let tabs: Rc<RefCell<Vec<TabEntry>>> = Rc::new(RefCell::new(Vec::new()));
         let active_tab: Rc<Cell<usize>> = Rc::new(Cell::new(0));
 
-        // ---- Toolbar: back ----
+        // ---- Toolbar callbacks ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
             toolbar.on_back(move || {
-                let idx = active_c.get();
-                if let Some(tab) = tabs_c.borrow().get(idx) {
+                if let Some(tab) = tabs_c.borrow().get(active_c.get()) {
                     tab.webview.go_back();
                 }
             });
         }
-
-        // ---- Toolbar: forward ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
             toolbar.on_forward(move || {
-                let idx = active_c.get();
-                if let Some(tab) = tabs_c.borrow().get(idx) {
+                if let Some(tab) = tabs_c.borrow().get(active_c.get()) {
                     tab.webview.go_forward();
                 }
             });
         }
-
-        // ---- Toolbar: reload ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
             toolbar.on_reload(move || {
-                let idx = active_c.get();
-                if let Some(tab) = tabs_c.borrow().get(idx) {
+                if let Some(tab) = tabs_c.borrow().get(active_c.get()) {
                     tab.webview.reload();
                 }
             });
         }
-
-        // ---- Omnibox Enter → navigate ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
@@ -122,14 +113,11 @@ impl MainWindow {
             let config_c = config.clone();
             toolbar.omnibox().on_activate(move |text| {
                 let url = navigation::normalize_url(text);
-                let idx = active_c.get();
-                if let Some(tab) = tabs_c.borrow().get(idx) {
+                if let Some(tab) = tabs_c.borrow().get(active_c.get()) {
                     load_any(&tab.webview, &url, &db_c, &config_c);
                 }
             });
         }
-
-        // ---- Home button ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
@@ -137,14 +125,30 @@ impl MainWindow {
             let config_c = config.clone();
             toolbar.on_home(move || {
                 let home = config_c.homepage();
-                let idx = active_c.get();
-                if let Some(tab) = tabs_c.borrow().get(idx) {
+                if let Some(tab) = tabs_c.borrow().get(active_c.get()) {
                     load_any(&tab.webview, &home, &db_c, &config_c);
                 }
             });
         }
-
-        // ---- Tabbar: nút "+" ----
+        // ---- Bookmark button ----
+        {
+            let tabs_c = tabs.clone();
+            let active_c = active_tab.clone();
+            let db_c = db.clone();
+            toolbar.on_bookmark(move || {
+                if let Some(tab) = tabs_c.borrow().get(active_c.get()) {
+                    if let (Some(url), Some(title)) = (tab.webview.uri(), tab.webview.title()) {
+                        if !url.is_empty() && !url.starts_with("data:") {
+                            match db_c.insert_bookmark(&url, &title) {
+                                Ok(_) => log::info!("Bookmarked: {} ({})", title, url),
+                                Err(e) => log::warn!("Bookmark failed: {}", e),
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        // ---- Tabbar "+" ----
         {
             let tabs_c = tabs.clone();
             let tabbar_c = tabbar.clone();
@@ -154,13 +158,10 @@ impl MainWindow {
             let active_c = active_tab.clone();
             tabbar.on_new_tab(move || {
                 let home = config_c.homepage();
-                Self::open_tab(
-                    &tabs_c, &tabbar_c, &toolbar_c, &db_c, &active_c, &config_c, &home,
-                );
+                Self::open_tab(&tabs_c, &tabbar_c, &toolbar_c, &db_c, &active_c, &config_c, &home);
             });
         }
-
-        // ---- Menu: New Tab ----
+        // ---- Menu callbacks ----
         {
             let tabs_c = tabs.clone();
             let tabbar_c = tabbar.clone();
@@ -170,67 +171,64 @@ impl MainWindow {
             let active_c = active_tab.clone();
             toolbar.on_new_tab(move || {
                 let home = config_c.homepage();
-                Self::open_tab(
-                    &tabs_c, &tabbar_c, &toolbar_c, &db_c, &active_c, &config_c, &home,
-                );
+                Self::open_tab(&tabs_c, &tabbar_c, &toolbar_c, &db_c, &active_c, &config_c, &home);
             });
         }
-
-        // ---- Menu: History ----
+        {
+            let tabs_c = tabs.clone();
+            let active_c = active_tab.clone();
+            let db_c = db.clone();
+            let config_c = config.clone();
+            toolbar.on_bookmarks(move || {
+                if let Some(tab) = tabs_c.borrow().get(active_c.get()) {
+                    load_any(&tab.webview, "kestrel://bookmarks", &db_c, &config_c);
+                }
+            });
+        }
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
             let db_c = db.clone();
             let config_c = config.clone();
             toolbar.on_history(move || {
-                let idx = active_c.get();
-                if let Some(tab) = tabs_c.borrow().get(idx) {
+                if let Some(tab) = tabs_c.borrow().get(active_c.get()) {
                     load_any(&tab.webview, "kestrel://history", &db_c, &config_c);
                 }
             });
         }
-
-        // ---- Menu: Settings ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
             let db_c = db.clone();
             let config_c = config.clone();
             toolbar.on_settings(move || {
-                let idx = active_c.get();
-                if let Some(tab) = tabs_c.borrow().get(idx) {
+                if let Some(tab) = tabs_c.borrow().get(active_c.get()) {
                     load_any(&tab.webview, "kestrel://settings", &db_c, &config_c);
                 }
             });
         }
-
-        // ---- Menu: About ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
             toolbar.on_about(move || {
-                let idx = active_c.get();
-                if let Some(tab) = tabs_c.borrow().get(idx) {
+                if let Some(tab) = tabs_c.borrow().get(active_c.get()) {
                     tab.webview.load_html(ABOUT_HTML, None);
                 }
             });
         }
-
-        // ---- Menu: Quit ----
         {
-            toolbar.on_quit(|| {
-                std::process::exit(0);
-            });
+            toolbar.on_quit(|| std::process::exit(0));
         }
-
-        // ---- Tab switch → update omnibox ----
+        // ---- Tab switch ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab.clone();
             let omnibox_c = toolbar.omnibox().clone();
             tabbar.on_switch(move |page_num| {
-                active_c.set(page_num as usize);
-                if let Some(tab) = tabs_c.borrow().get(page_num as usize) {
+                let idx = tabs_c.borrow().iter()
+                    .position(|t| t.page_num == page_num).unwrap_or(0);
+                active_c.set(idx);
+                if let Some(tab) = tabs_c.borrow().get(idx) {
                     if let Some(uri) = tab.webview.uri() {
                         if uri.starts_with("data:") {
                             omnibox_c.set_text("kestrel://home");
@@ -242,18 +240,17 @@ impl MainWindow {
             });
         }
 
-        // ---- Layout: TABBAR TRÊN CÙNG, TOOLBAR DƯỚI (giống Brave) ----
+        // ---- Layout Brave: tab strip → toolbar → content ----
         let vbox = GtkBox::new(Orientation::Vertical, 0);
-        vbox.append(tabbar.widget());
+        vbox.append(tabbar.strip_widget());
         vbox.append(toolbar.widget());
+        vbox.append(tabbar.content_widget());
         window.set_child(Some(&vbox));
 
-        // ---- Mở tab đầu tiên ngay ----
+        // ---- Mở tab đầu tiên ----
         {
             let homepage = config.homepage();
-            Self::open_tab(
-                &tabs, &tabbar, &toolbar, &db, &active_tab, &config, &homepage,
-            );
+            Self::open_tab(&tabs, &tabbar, &toolbar, &db, &active_tab, &config, &homepage);
         }
 
         Self { window }
@@ -281,12 +278,10 @@ impl MainWindow {
         let tab_index = tabs.borrow().len();
 
         let page_num = {
-            let tabbar_c = tabbar.clone();
             let tabs_c = tabs.clone();
             let holder_c = page_num_holder.clone();
             tabbar.add_tab(&webview, "Loading...", move || {
                 let pn = holder_c.get();
-                tabbar_c.close_tab(pn);
                 tabs_c.borrow_mut().retain(|t| t.page_num != pn);
             })
         };
@@ -299,9 +294,9 @@ impl MainWindow {
             let config_c = config.clone();
             let active_c = active_tab.clone();
             ucm.connect_script_message_received(move |_ucm, _name, body| {
-                log::info!("Message from page: {}", body);
+                log::info!("Message: {}", body);
                 let Ok(v) = serde_json::from_str::<serde_json::Value>(body) else {
-                    log::warn!("Invalid JSON from page: {}", body);
+                    log::warn!("Invalid JSON: {}", body);
                     return;
                 };
                 let action = v.get("action").and_then(|a| a.as_str()).unwrap_or("");
@@ -309,8 +304,7 @@ impl MainWindow {
                     "navigate" => {
                         if let Some(u) = v.get("url").and_then(|u| u.as_str()) {
                             let normalized = navigation::normalize_url(u);
-                            let idx = active_c.get();
-                            if let Some(tab) = tabs_c.borrow().get(idx) {
+                            if let Some(tab) = tabs_c.borrow().get(active_c.get()) {
                                 load_any(&tab.webview, &normalized, &db_c, &config_c);
                             }
                         }
@@ -328,9 +322,17 @@ impl MainWindow {
                         if let Some(d) = v.get("dark_theme").and_then(|x| x.as_bool()) {
                             let _ = config_c.set_dark_theme(d);
                         }
-                        log::info!("Settings saved from page.");
+                        log::info!("Settings saved.");
                     }
-                    _ => log::warn!("Unknown action from page: {}", action),
+                    "remove-bookmark" => {
+                        if let Some(id) = v.get("id").and_then(|x| x.as_i64()) {
+                            match db_c.remove_bookmark(id) {
+                                Ok(_) => log::info!("Bookmark removed: {}", id),
+                                Err(e) => log::warn!("Remove bookmark failed: {}", e),
+                            }
+                        }
+                    }
+                    _ => log::warn!("Unknown action: {}", action),
                 }
             });
         }
@@ -339,8 +341,7 @@ impl MainWindow {
         {
             let tabbar_c = tabbar.clone();
             webview.connect_title_notify(move |wv| {
-                let title = wv
-                    .title()
+                let title = wv.title()
                     .filter(|t| !t.is_empty())
                     .unwrap_or_else(|| "Untitled".into());
                 tabbar_c.set_tab_title(page_num, &title);
@@ -352,13 +353,9 @@ impl MainWindow {
             let omnibox_c = toolbar.omnibox().clone();
             let active_c = active_tab.clone();
             webview.connect_uri_notify(move |wv| {
-                if active_c.get() != tab_index {
-                    return;
-                }
+                if active_c.get() != tab_index { return; }
                 if let Some(uri) = wv.uri() {
-                    if uri.starts_with("data:") {
-                        return;
-                    }
+                    if uri.starts_with("data:") { return; }
                     omnibox_c.set_text(&uri);
                 }
             });
@@ -396,11 +393,7 @@ impl MainWindow {
             tabbar.set_tab_favicon(page_num, "web-browser-symbolic");
         }
 
-        tabs.borrow_mut().push(TabEntry {
-            webview,
-            page_num,
-            ucm,
-        });
+        tabs.borrow_mut().push(TabEntry { webview, page_num, ucm });
         active_tab.set(tab_index);
     }
 
@@ -409,7 +402,6 @@ impl MainWindow {
     }
 }
 
-/// Load URL vào WebView. Xử lý trang nội bộ + query string save/restore.
 fn load_any(webview: &WebView, url: &str, db: &Database, config: &Config) {
     let lang = config.language();
 
@@ -426,21 +418,23 @@ fn load_any(webview: &WebView, url: &str, db: &Database, config: &Config) {
         }
         Some(Page::Settings) => {
             let html = internal_pages::settings::render(
-                &lang,
-                &config.homepage(),
-                &config.search_engine(),
-                config.dark_theme(),
+                &lang, &config.homepage(), &config.search_engine(), config.dark_theme(),
             );
             webview.load_html(&html, None);
         }
         Some(Page::History) => {
-            let records = db
-                .fetch_history(200)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|r| (r.url, r.title, r.timestamp))
+            let records = db.fetch_history(200).unwrap_or_default()
+                .into_iter().map(|r| (r.url, r.title, r.timestamp))
                 .collect::<Vec<_>>();
             let html = internal_pages::history::render(&records);
+            webview.load_html(&html, None);
+        }
+        Some(Page::Bookmarks) => {
+            let records = db.fetch_bookmarks().unwrap_or_default()
+                .into_iter()
+                .filter_map(|r| r.id.map(|id| (id, r.url, r.title)))
+                .collect::<Vec<_>>();
+            let html = internal_pages::bookmarks::render(&records);
             webview.load_html(&html, None);
         }
         None => {
@@ -449,34 +443,19 @@ fn load_any(webview: &WebView, url: &str, db: &Database, config: &Config) {
     }
 }
 
-/// Fallback: parse query string `kestrel://settings?...` và lưu vào config.
 fn apply_settings_query(query: &str, config: &Config) {
     use std::collections::HashMap;
-
     let params: HashMap<String, String> = url::form_urlencoded::parse(query.as_bytes())
-        .into_owned()
-        .collect();
-
+        .into_owned().collect();
     if params.contains_key("reset") {
         let _ = config.set_homepage("kestrel://home");
         let _ = config.set_search_engine("https://search.brave.com/search?q=");
         let _ = config.set_language("en");
         let _ = config.set_dark_theme(false);
-        log::info!("Settings reset via query");
         return;
     }
-
-    if let Some(h) = params.get("homepage") {
-        let _ = config.set_homepage(h);
-    }
-    if let Some(s) = params.get("search") {
-        let _ = config.set_search_engine(s);
-    }
-    if let Some(l) = params.get("language") {
-        let _ = config.set_language(l);
-    }
-    if let Some(d) = params.get("dark") {
-        let _ = config.set_dark_theme(d == "true");
-    }
-    log::info!("Settings applied from query");
+    if let Some(h) = params.get("homepage") { let _ = config.set_homepage(h); }
+    if let Some(s) = params.get("search") { let _ = config.set_search_engine(s); }
+    if let Some(l) = params.get("language") { let _ = config.set_language(l); }
+    if let Some(d) = params.get("dark") { let _ = config.set_dark_theme(d == "true"); }
 }
