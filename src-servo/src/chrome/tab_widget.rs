@@ -1,5 +1,5 @@
-//! Tab button — favicon + title + nút X. Dùng trong tab strip, không phải
-//! tab header của Notebook.
+//! Tab widget — 2 button độc lập: thân tab (click để activate) và nút X
+//! (click để close). Không dùng GestureClick để tránh xung đột event.
 
 use std::rc::Rc;
 
@@ -19,8 +19,17 @@ impl TabWidget {
         FA: Fn() + 'static,
         FC: Fn() + 'static,
     {
-        let container = GtkBox::new(Orientation::Horizontal, 6);
+        // Container ngoài — chỉ để gom body + close.
+        let container = GtkBox::new(Orientation::Horizontal, 0);
         container.add_css_class("kestrel-tab");
+        container.set_hexpand(false);
+        container.set_vexpand(false);
+
+        // --- Thân tab: Button chứa favicon + label ---
+        let body = Button::new();
+        body.add_css_class("kestrel-tab-body");
+        body.set_hexpand(true);
+        body.set_vexpand(false);
 
         let favicon = Image::from_icon_name("text-x-generic-symbolic");
         favicon.set_pixel_size(14);
@@ -28,25 +37,27 @@ impl TabWidget {
 
         let label = Label::new(Some(title));
         label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-        label.set_max_width_chars(22);
+        label.set_max_width_chars(20);
         label.set_single_line_mode(true);
         label.set_hexpand(true);
         label.set_xalign(0.0);
         label.add_css_class("kestrel-tab-label");
 
+        let body_content = GtkBox::new(Orientation::Horizontal, 6);
+        body_content.append(&favicon);
+        body_content.append(&label);
+        body.set_child(Some(&body_content));
+        body.connect_clicked(move |_| on_activate());
+
+        // --- Nút X: Button riêng, sibling của body ---
         let close_button = Button::from_icon_name("window-close-symbolic");
         close_button.set_tooltip_text(Some("Close tab"));
         close_button.add_css_class("kestrel-tab-close");
+        close_button.set_vexpand(false);
         close_button.connect_clicked(move |_| on_close());
 
-        container.append(&favicon);
-        container.append(&label);
+        container.append(&body);
         container.append(&close_button);
-
-        let gesture = gtk4::GestureClick::new();
-        let on_activate = Rc::new(on_activate);
-        gesture.connect_released(move |_, _, _, _| on_activate());
-        container.add_controller(gesture);
 
         Rc::new(Self {
             container,
