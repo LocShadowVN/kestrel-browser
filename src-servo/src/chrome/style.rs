@@ -8,53 +8,72 @@ window.kestrel-window { background-color: #1a1a1f; }
 /* ===== TAB STRIP ===== */
 .kestrel-tab-strip {
     background: #0d0d12;
-    padding: 4px 6px;
-    min-height: 38px;
+    padding: 3px 6px;
+    min-height: 32px;
     border-bottom: 1px solid #050508;
 }
-.kestrel-tabs-area { min-height: 34px; }
+.kestrel-tabs-area { min-height: 28px; }
 
+/* Container tab — chỉ giữ background + rounded */
 .kestrel-tab {
     background: #1a1a20;
-    border-radius: 8px;
-    padding: 4px 8px 4px 10px;
-    min-height: 30px;
-    min-width: 180px;
-    max-width: 240px;
+    border-radius: 7px;
+    min-height: 26px;
+    min-width: 100px;
+    margin: 0 1px;
     color: #b0b0b8;
     transition: background 0.1s;
 }
 .kestrel-tab:hover { background: #23232c; color: #e0e0e6; }
 .kestrel-tab.active { background: #2a2a35; color: #ffffff; }
 
+/* Thân tab — Button trong suốt, không chiếm background của container */
+.kestrel-tab-body {
+    background: transparent;
+    background-image: none;
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+    padding: 4px 4px 4px 10px;
+    margin: 0;
+    min-width: 0;
+    min-height: 0;
+    color: inherit;
+    font-size: 12px;
+}
+.kestrel-tab-body:hover { background: transparent; }
+.kestrel-tab-body:active { background: transparent; }
+
 .kestrel-tab-favicon { color: inherit; }
 .kestrel-tab-label { font-size: 12px; color: inherit; }
 
+/* Nút X */
 .kestrel-tab-close {
     background: transparent;
     background-image: none;
     border: none;
     box-shadow: none;
     border-radius: 4px;
-    min-width: 20px;
-    min-height: 20px;
+    min-width: 18px;
+    min-height: 18px;
     padding: 0;
-    margin: 0;
+    margin: 4px 4px 4px 0;
     color: inherit;
-    opacity: 0.55;
+    opacity: 0.5;
 }
 .kestrel-tab-close:hover { background: #3a3a45; opacity: 1; color: #ffffff; }
 
+/* Nút + */
 .kestrel-new-tab-button {
     background: transparent;
     background-image: none;
     border: none;
     box-shadow: none;
     border-radius: 6px;
-    min-width: 30px;
-    min-height: 30px;
+    min-width: 26px;
+    min-height: 26px;
     padding: 0;
-    margin: 0 4px;
+    margin: 1px 4px;
     color: #c0c0c8;
 }
 .kestrel-new-tab-button:hover { background: #2a2a35; color: #ffffff; }
