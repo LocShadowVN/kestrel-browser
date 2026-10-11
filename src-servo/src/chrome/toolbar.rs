@@ -37,7 +37,6 @@ impl Toolbar {
 
         let home = make_icon_button("go-home-symbolic", "Home");
 
-        // Menu items
         let menu_new_tab = menu_item("New Tab");
         let menu_history = menu_item("History");
         let menu_settings = menu_item("Settings");
@@ -91,7 +90,6 @@ impl Toolbar {
     pub fn omnibox(&self) -> &Rc<Omnibox> {
         &self.omnibox
     }
-
     pub fn on_back<F: Fn() + 'static>(&self, cb: F) {
         self.back.connect_clicked(move |_| cb());
     }
