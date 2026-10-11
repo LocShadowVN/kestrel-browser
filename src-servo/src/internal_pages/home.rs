@@ -1,8 +1,8 @@
 //! Trang chủ nội bộ — kestrel://home
 //!
-//! Render theo ngôn ngữ cấu hình. Mặc định tiếng Anh.
+//! Song ngữ Anh-Việt, mặc định tiếng Anh. Search bar dùng form GET,
+//! không phụ thuộc message channel.
 
-/// Render trang chủ theo mã ngôn ngữ (`en` hoặc `vi`).
 pub fn render(lang: &str) -> String {
     match lang {
         "vi" => VI.to_string(),
