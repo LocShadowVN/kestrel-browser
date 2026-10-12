@@ -107,7 +107,12 @@ pub fn rules_for_level(level: u8) -> Vec<String> {
 }
 
 fn download_to(url: &str, path: &Path, required: bool) {
-    let result = ureq::get(url).call().and_then(|r| r.into_string());
+    // Normalize both the request error (ureq::Error) and the body-read error
+    // (std::io::Error) into a String so they can be chained through and_then.
+    let result: Result<String, String> = ureq::get(url)
+        .call()
+        .map_err(|e| e.to_string())
+        .and_then(|r| r.into_string().map_err(|e| e.to_string()));
 
     match result {
         Ok(text) if text.len() as u64 >= MIN_VALID_SIZE => {
