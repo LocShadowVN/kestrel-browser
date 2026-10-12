@@ -15,8 +15,7 @@ shared = { path = "../shared" }
 pkcs1 = { workspace = true }
 
 # Fork servo-gtk có adblock.
-servo-gtk = { git = "https://github.com/LocShadowVN/servo-gtk.git", rev = "<COMMIT_HASH_FORK>" }
-
+servo-gtk = { git = "https://github.com/LocShadowVN/servo-gtk.git", rev = "91f229e89a8f680009f57eb487d0a4ffda9a9129" }
 gtk4 = { version = "0.11", features = ["v4_12"] }
 glib = { version = "0.22", features = ["v2_74"] }
 gio = "0.22"
