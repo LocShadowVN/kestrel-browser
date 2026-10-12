@@ -21,6 +21,8 @@ pub struct AppConfig {
     pub homepage: String,
     pub dark_theme: bool,
     pub language: String,
+    /// Adblock level: 0 = Off, 1 = Standard, 2 = Aggressive.
+    pub adblock_level: u8,
 }
 
 impl Default for AppConfig {
@@ -30,6 +32,7 @@ impl Default for AppConfig {
             homepage: "kestrel://home".into(),
             dark_theme: true,
             language: "en".into(),
+            adblock_level: 1,
         }
     }
 }
