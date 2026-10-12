@@ -1,3 +1,4 @@
+pub mod adblock_button;
 pub mod omnibox;
 pub mod style;
 pub mod tab_widget;
