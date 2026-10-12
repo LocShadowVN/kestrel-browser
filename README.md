@@ -6,7 +6,7 @@ A lightweight, pure-Rust web browser for Linux, built on the **Servo engine**.
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux%20x86__64-lightgrey.svg?style=flat-square)]()
 [![Engine](https://img.shields.io/badge/engine-Servo-orange.svg?style=flat-square)](https://servo.org/)
-[![Status](https://img.shields.io/badge/status-approaching%20alpha-yellow.svg?style=flat-square)](#status)
+[![Status](https://img.shields.io/badge/status-beta-orange.svg?style=flat-square)](#status)
 
 [English](#english) · [Tiếng Việt](#tiếng-việt)
 
@@ -17,34 +17,52 @@ A lightweight, pure-Rust web browser for Linux, built on the **Servo engine**.
 
 ### Status
 
-**Approaching first alpha release.** Kestrel builds, runs, and renders real
-web pages on Linux. The core browser loop — navigation, tabs, internal pages,
-settings, and history — is functional. Packaging for end users (`.deb`,
-Flatpak) is planned next.
+**Beta.** Kestrel builds, runs, and renders real web pages on Linux. Core
+browser features — navigation, tabs, internal pages, settings, history,
+bookmarks, and network-level ad blocking — are functional.
 
-Not yet ready for daily use. See [Known Limitations](#known-limitations).
-
-### About
-
-Kestrel is an experimental desktop browser for Linux, built on the
-[Servo engine](https://servo.org) — a pure-Rust browser engine backed by
-Linux Foundation Europe and developed primarily by Igalia. The project targets
-a browser that runs on modest hardware, does not bundle Chromium, and ships
-with zero telemetry.
-
-Kestrel is a long-term bet on Servo. It trades web compatibility for a lighter
-runtime footprint and a codebase that is fully auditable in Rust.
+Not yet ready for daily driver use (see [Known Limitations](#known-limitations)),
+but approaching a usable alpha release.
 
 ### Features
 
-- **GTK4 native UI** — window, tab bar, toolbar, omnibox, hamburger menu
+- **GTK4 native UI** — tab strip, toolbar, omnibox, hamburger menu
 - **Servo engine** — renders HTML, CSS, and full Unicode
 - **Navigation** — back, forward, reload, home
-- **Omnibox** — enter a URL, or search with Brave Search
-- **Internal pages** — `kestrel://home`, `kestrel://settings`, `kestrel://history`
+- **Omnibox** — enter a URL or search with Brave Search
+- **Internal pages** — `kestrel://home`, `kestrel://settings`,
+  `kestrel://history`, `kestrel://bookmarks`
 - **Bilingual UI** — English and Vietnamese, switchable in settings
 - **Local storage** — SQLite for history, bookmarks, and settings
-- **Compat module** — JS polyfills for API gaps in current Servo
+- **Ad blocking** — network-level, powered by
+  [`adblock-rust`](https://github.com/brave/adblock-rust) (Brave's engine)
+  with EasyList + EasyPrivacy + Fanboy's Annoyances. Three levels:
+  Off / Standard / Aggressive.
+- **Web compat module** — JS polyfills for API gaps in current Servo
+
+### Architecture
+
+Kestrel depends on a **fork of
+[`nacho/servo-gtk`](https://github.com/nacho/servo-gtk)** at
+[`LocShadowVN/servo-gtk`](https://github.com/LocShadowVN/servo-gtk). The fork
+adds a `WebViewDelegate::load_web_resource` hook so subresource requests can
+be inspected and cancelled before Servo dispatches them. The adblock engine
+runs inside the Servo runner subprocess, so per-request filtering is a plain
+function call rather than an IPC round-trip.
+
+```
+kestrel-browser/
+├── shared/              # Shared types (serde)
+├── src-servo/           # Main binary
+│   ├── adblock_rules.rs # Filter lists, embedded at build time
+│   ├── build.rs         # Downloads and embeds EasyList etc.
+│   ├── chrome/          # UI (tabs, toolbar, omnibox, adblock button)
+│   ├── engine/          # URL normalization
+│   ├── internal_pages/  # kestrel://home, settings, history, bookmarks
+│   ├── storage/         # SQLite
+│   └── util/            # Config, logging
+└── .github/workflows/   # CI + release
+```
 
 ### Roadmap
 
@@ -52,8 +70,8 @@ runtime footprint and a codebase that is fully auditable in Rust.
 |---|---|---|
 | **0** | Stable CI build | Done |
 | **1** | Basic working browser | Done |
-| **1.5** | Compat module (JS polyfills) | In progress |
-| **2** | Adblock (network + cosmetic) via `adblock-rust` | Planned |
+| **1.5** | Compat module (JS polyfills) | Done |
+| **2** | Ad blocking via `adblock-rust` | Done |
 | **3** | Privacy: vault, UA spoofing | Planned |
 | **4** | Media: video, audio | Blocked by Servo upstream |
 | **5** | Packaging: `.deb`, Flatpak, AUR | Planned |
@@ -73,7 +91,10 @@ cd kestrel-browser
 cargo build --release
 ```
 
-The binary is produced at `target/release/kestrel`.
+The binary is produced at `target/release/kestrel`. Filter lists
+(EasyList, EasyPrivacy, Fanboy's Annoyances) are downloaded by the build
+script on first build and embedded into the binary; subsequent builds reuse
+the cache.
 
 ### Known Limitations
 
@@ -87,14 +108,12 @@ Servo is under active development. The following are not yet supported:
 | Chrome/Firefox extensions | Servo lacks WebExtension API |
 | Some SPAs (react.dev) | Missing JS APIs; polyfills insufficient |
 
-These limitations are tracked and will be revisited as Servo upstream
-adds support.
-
 ### Previous Version — Vibird
 
 If you need a feature-complete browser today (4-layer adblock, vault,
-downloads, session), see [LocShadowVN/VibirdBrowser](https://github.com/LocShadowVN/VibirdBrowser)
-— the WebKitGTK-based predecessor.
+downloads, session), see
+[LocShadowVN/VibirdBrowser](https://github.com/LocShadowVN/VibirdBrowser) —
+the WebKitGTK-based predecessor.
 
 ### Contributing
 
@@ -104,6 +123,14 @@ Contributions are welcome. Useful areas:
 - Reporting build errors with full logs
 - Testing on different GPU and desktop configurations
 - Improving documentation and translations
+
+### Credits
+
+- The Servo engine is developed by [Igalia](https://www.igalia.com) and
+  contributors, backed by Linux Foundation Europe.
+- [`servo-gtk`](https://github.com/nacho/servo-gtk) upstream is written and
+  maintained by [Ignacio Casal Quinteiro (nacho)](https://github.com/nacho).
+  Kestrel uses a downstream fork with ad-blocking support.
 
 ### License
 
@@ -116,34 +143,52 @@ GNU General Public License v3.0. See [LICENSE](LICENSE).
 
 ### Trạng thái
 
-**Sắp phát hành bản alpha đầu tiên.** Kestrel build được, chạy được, và
-render được trang web thật trên Linux. Vòng lặp trình duyệt cốt lõi —
-điều hướng, tab, trang nội bộ, cài đặt, lịch sử — đã hoạt động. Bước tiếp
-theo là đóng gói cho người dùng cuối (`.deb`, Flatpak).
+**Beta.** Kestrel build được, chạy được, và render được trang web thật trên
+Linux. Các tính năng cốt lõi — điều hướng, tab, trang nội bộ, cài đặt, lịch
+sử, bookmark, và chặn quảng cáo ở tầng network — đã hoạt động.
 
-Chưa sẵn sàng dùng hàng ngày. Xem [Giới hạn đã biết](#giới-hạn-đã-biết).
+Chưa sẵn sàng dùng hàng ngày (xem [Giới hạn đã biết](#giới-hạn-đã-biết)),
+nhưng đang tiến gần đến bản alpha dùng được.
 
-### Giới thiệu
+### Tính năng
 
-Kestrel là trình duyệt desktop thử nghiệm cho Linux, xây trên
-[Servo engine](https://servo.org) — engine trình duyệt thuần Rust do
-Linux Foundation Europe bảo trợ và Igalia phát triển chính. Mục tiêu:
-một trình duyệt chạy được trên máy cấu hình thấp, không bundle Chromium,
-không telemetry.
-
-Kestrel là canh bạc dài hạn vào Servo. Đánh đổi web compatibility lấy
-runtime nhẹ hơn và codebase thuần Rust có thể kiểm tra toàn bộ.
-
-### Tính năng hiện có
-
-- **GTK4 native UI** — window, tab bar, toolbar, omnibox, menu hamburger
+- **GTK4 native UI** — tab strip, toolbar, omnibox, menu hamburger
 - **Servo engine** — render HTML, CSS và Unicode đầy đủ
 - **Điều hướng** — back, forward, reload, home
-- **Omnibox** — nhập URL, hoặc search qua Brave Search
-- **Trang nội bộ** — `kestrel://home`, `kestrel://settings`, `kestrel://history`
+- **Omnibox** — nhập URL hoặc search qua Brave Search
+- **Trang nội bộ** — `kestrel://home`, `kestrel://settings`,
+  `kestrel://history`, `kestrel://bookmarks`
 - **Giao diện song ngữ** — Anh và Việt, đổi trong settings
 - **Lưu trữ cục bộ** — SQLite cho lịch sử, bookmark, và cài đặt
+- **Chặn quảng cáo** — ở tầng network, dùng
+  [`adblock-rust`](https://github.com/brave/adblock-rust) (engine của Brave)
+  với EasyList + EasyPrivacy + Fanboy's Annoyances. Ba mức:
+  Off / Standard / Aggressive.
 - **Compat module** — polyfill JS bù các API Servo còn thiếu
+
+### Kiến trúc
+
+Kestrel phụ thuộc vào **bản fork của
+[`nacho/servo-gtk`](https://github.com/nacho/servo-gtk)** tại
+[`LocShadowVN/servo-gtk`](https://github.com/LocShadowVN/servo-gtk). Bản fork
+thêm hook `WebViewDelegate::load_web_resource` để kiểm tra và hủy các
+subresource request trước khi Servo gửi chúng đi. Engine adblock chạy bên
+trong subprocess Servo runner, nên việc lọc mỗi request chỉ là một lời gọi
+hàm — không phải IPC round-trip.
+
+```
+kestrel-browser/
+├── shared/              # Kiểu dữ liệu chia sẻ (serde)
+├── src-servo/           # Binary chính
+│   ├── adblock_rules.rs # Filter list, nhúng vào binary lúc build
+│   ├── build.rs         # Tải và nhúng EasyList, v.v.
+│   ├── chrome/          # UI (tabs, toolbar, omnibox, nút adblock)
+│   ├── engine/          # Chuẩn hoá URL
+│   ├── internal_pages/  # kestrel://home, settings, history, bookmarks
+│   ├── storage/         # SQLite
+│   └── util/            # Config, logging
+└── .github/workflows/   # CI + release
+```
 
 ### Roadmap
 
@@ -151,8 +196,8 @@ runtime nhẹ hơn và codebase thuần Rust có thể kiểm tra toàn bộ.
 |---|---|---|
 | **0** | Build ổn định trên CI | Xong |
 | **1** | Browser cơ bản chạy được | Xong |
-| **1.5** | Compat module (polyfill JS) | Đang làm |
-| **2** | Adblock (network + cosmetic) qua `adblock-rust` | Kế hoạch |
+| **1.5** | Compat module (polyfill JS) | Xong |
+| **2** | Chặn quảng cáo qua `adblock-rust` | Xong |
 | **3** | Privacy: vault, UA spoofing | Kế hoạch |
 | **4** | Media: video, audio | Phụ thuộc Servo upstream |
 | **5** | Đóng gói: `.deb`, Flatpak, AUR | Kế hoạch |
@@ -172,7 +217,9 @@ cd kestrel-browser
 cargo build --release
 ```
 
-Binary nằm ở `target/release/kestrel`.
+Binary nằm ở `target/release/kestrel`. Filter list (EasyList, EasyPrivacy,
+Fanboy's Annoyances) được build script tải về ở lần build đầu tiên và nhúng
+vào binary; các lần build sau dùng lại cache.
 
 ### Giới hạn đã biết
 
@@ -186,12 +233,11 @@ Servo đang phát triển tích cực. Các tính năng sau chưa được hỗ 
 | Extension Chrome/Firefox | Servo chưa có WebExtension API |
 | Một số SPA (react.dev) | Thiếu JS API; polyfill chưa đủ |
 
-Danh sách này sẽ được cập nhật khi Servo upstream bổ sung tính năng.
-
 ### Phiên bản trước — Vibird
 
 Nếu bạn cần một trình duyệt đầy đủ tính năng ngay bây giờ (adblock 4 tầng,
-vault, download, session), xem [LocShadowVN/VibirdBrowser](https://github.com/LocShadowVN/VibirdBrowser)
+vault, download, session), xem
+[LocShadowVN/VibirdBrowser](https://github.com/LocShadowVN/VibirdBrowser)
 — phiên bản tiền nhiệm dùng WebKitGTK.
 
 ### Đóng góp
@@ -202,6 +248,14 @@ vault, download, session), xem [LocShadowVN/VibirdBrowser](https://github.com/Lo
 - Báo cáo lỗi build kèm log đầy đủ
 - Test trên các cấu hình GPU và desktop khác nhau
 - Cải thiện documentation và bản dịch
+
+### Ghi công
+
+- Engine Servo được phát triển bởi [Igalia](https://www.igalia.com) và
+  cộng đồng, với sự bảo trợ của Linux Foundation Europe.
+- [`servo-gtk`](https://github.com/nacho/servo-gtk) upstream được viết và
+  duy trì bởi [Ignacio Casal Quinteiro (nacho)](https://github.com/nacho).
+  Kestrel dùng bản fork hạ nguồn có hỗ trợ chặn quảng cáo.
 
 ### Giấy phép
 
