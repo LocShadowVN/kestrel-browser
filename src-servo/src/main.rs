@@ -1,3 +1,4 @@
+mod adblock_rules;
 mod app;
 mod chrome;
 mod compat;
