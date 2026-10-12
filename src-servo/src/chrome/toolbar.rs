@@ -1,10 +1,11 @@
-//! Toolbar — nav + omnibox + bookmark + home + menu.
+//! Toolbar — nav buttons + omnibox + adblock + bookmark + home + menu.
 
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use gtk4::{Box as GtkBox, Button, MenuButton, Orientation, Popover, Separator};
 
+use crate::chrome::adblock_button::{AdblockButton, AdblockLevel};
 use crate::chrome::omnibox::Omnibox;
 
 pub struct Toolbar {
@@ -15,6 +16,7 @@ pub struct Toolbar {
     reload: Button,
     home: Button,
     bookmark: Button,
+    adblock: Rc<AdblockButton>,
     menu_new_tab: Button,
     menu_history: Button,
     menu_settings: Button,
@@ -26,7 +28,10 @@ pub struct Toolbar {
 }
 
 impl Toolbar {
-    pub fn new() -> Self {
+    pub fn new<F>(on_adblock_change: F) -> Self
+    where
+        F: Fn(u8) + 'static,
+    {
         let container = GtkBox::new(Orientation::Horizontal, 0);
         container.add_css_class("kestrel-toolbar");
         container.set_spacing(4);
@@ -37,6 +42,10 @@ impl Toolbar {
 
         let omnibox = Rc::new(Omnibox::new());
 
+        let adblock = Rc::new(AdblockButton::new(
+            AdblockLevel::Standard,
+            on_adblock_change,
+        ));
         let bookmark = make_icon_button("user-bookmarks-symbolic", "Bookmark this page");
         let home = make_icon_button("go-home-symbolic", "Home");
 
@@ -73,35 +82,79 @@ impl Toolbar {
         container.append(&forward);
         container.append(&reload);
         container.append(omnibox.widget());
+        container.append(adblock.widget());
         container.append(&bookmark);
         container.append(&home);
         container.append(&menu);
 
         Self {
-            container, omnibox, back, forward, reload, home, bookmark,
-            menu_new_tab, menu_history, menu_settings, menu_bookmarks,
-            menu_about, menu_quit, menu,
+            container,
+            omnibox,
+            back,
+            forward,
+            reload,
+            home,
+            bookmark,
+            adblock,
+            menu_new_tab,
+            menu_history,
+            menu_settings,
+            menu_bookmarks,
+            menu_about,
+            menu_quit,
+            menu,
         }
     }
 
-    pub fn omnibox(&self) -> &Rc<Omnibox> { &self.omnibox }
-    pub fn on_back<F: Fn() + 'static>(&self, cb: F) { self.back.connect_clicked(move |_| cb()); }
-    pub fn on_forward<F: Fn() + 'static>(&self, cb: F) { self.forward.connect_clicked(move |_| cb()); }
-    pub fn on_reload<F: Fn() + 'static>(&self, cb: F) { self.reload.connect_clicked(move |_| cb()); }
-    pub fn on_home<F: Fn() + 'static>(&self, cb: F) { self.home.connect_clicked(move |_| cb()); }
-    pub fn on_bookmark<F: Fn() + 'static>(&self, cb: F) { self.bookmark.connect_clicked(move |_| cb()); }
-    pub fn on_new_tab<F: Fn() + 'static>(&self, cb: F) { self.menu_new_tab.connect_clicked(move |_| cb()); }
-    pub fn on_history<F: Fn() + 'static>(&self, cb: F) { self.menu_history.connect_clicked(move |_| cb()); }
-    pub fn on_settings<F: Fn() + 'static>(&self, cb: F) { self.menu_settings.connect_clicked(move |_| cb()); }
-    pub fn on_bookmarks<F: Fn() + 'static>(&self, cb: F) { self.menu_bookmarks.connect_clicked(move |_| cb()); }
-    pub fn on_about<F: Fn() + 'static>(&self, cb: F) { self.menu_about.connect_clicked(move |_| cb()); }
-    pub fn on_quit<F: Fn() + 'static>(&self, cb: F) { self.menu_quit.connect_clicked(move |_| cb()); }
+    pub fn omnibox(&self) -> &Rc<Omnibox> {
+        &self.omnibox
+    }
 
-    pub fn widget(&self) -> &GtkBox { &self.container }
-}
+    pub fn adblock(&self) -> &Rc<AdblockButton> {
+        &self.adblock
+    }
 
-impl Default for Toolbar {
-    fn default() -> Self { Self::new() }
+    pub fn set_adblock_level(&self, level: u8) {
+        self.adblock.set_level(level);
+    }
+
+    pub fn on_back<F: Fn() + 'static>(&self, cb: F) {
+        self.back.connect_clicked(move |_| cb());
+    }
+    pub fn on_forward<F: Fn() + 'static>(&self, cb: F) {
+        self.forward.connect_clicked(move |_| cb());
+    }
+    pub fn on_reload<F: Fn() + 'static>(&self, cb: F) {
+        self.reload.connect_clicked(move |_| cb());
+    }
+    pub fn on_home<F: Fn() + 'static>(&self, cb: F) {
+        self.home.connect_clicked(move |_| cb());
+    }
+    pub fn on_bookmark<F: Fn() + 'static>(&self, cb: F) {
+        self.bookmark.connect_clicked(move |_| cb());
+    }
+    pub fn on_new_tab<F: Fn() + 'static>(&self, cb: F) {
+        self.menu_new_tab.connect_clicked(move |_| cb());
+    }
+    pub fn on_history<F: Fn() + 'static>(&self, cb: F) {
+        self.menu_history.connect_clicked(move |_| cb());
+    }
+    pub fn on_settings<F: Fn() + 'static>(&self, cb: F) {
+        self.menu_settings.connect_clicked(move |_| cb());
+    }
+    pub fn on_bookmarks<F: Fn() + 'static>(&self, cb: F) {
+        self.menu_bookmarks.connect_clicked(move |_| cb());
+    }
+    pub fn on_about<F: Fn() + 'static>(&self, cb: F) {
+        self.menu_about.connect_clicked(move |_| cb());
+    }
+    pub fn on_quit<F: Fn() + 'static>(&self, cb: F) {
+        self.menu_quit.connect_clicked(move |_| cb());
+    }
+
+    pub fn widget(&self) -> &GtkBox {
+        &self.container
+    }
 }
 
 fn make_icon_button(icon_name: &str, tooltip: &str) -> Button {
