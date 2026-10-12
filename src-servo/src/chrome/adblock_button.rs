@@ -4,7 +4,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use gtk4::{Box as GtkBox, Button, Label, Orientation, Popover, ToggleButton};
+use gtk4::{Box as GtkBox, Label, MenuButton, Orientation, Popover, ToggleButton};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AdblockLevel {
@@ -56,7 +56,7 @@ impl AdblockLevel {
 }
 
 pub struct AdblockButton {
-    container: Button,
+    container: MenuButton,
     #[allow(dead_code)]
     popover: Popover,
     current: Rc<Cell<AdblockLevel>>,
@@ -68,7 +68,9 @@ impl AdblockButton {
     where
         F: Fn(u8) + 'static,
     {
-        let container = Button::from_icon_name(initial.icon());
+        // MenuButton (không phải Button) — chỉ MenuButton mới có set_popover().
+        let container = MenuButton::new();
+        container.set_icon_name(initial.icon());
         container.set_tooltip_text(Some("Ad blocking"));
         container.add_css_class("kestrel-toolbar-button");
 
@@ -139,7 +141,7 @@ impl AdblockButton {
         }
     }
 
-    pub fn widget(&self) -> &Button {
+    pub fn widget(&self) -> &MenuButton {
         &self.container
     }
 
