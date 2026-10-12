@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.1.0-alpha)'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  CARGO_BUILD_JOBS: "4"
+
+  # Release bắt buộc có filter. Nếu tải fail → build fail → không release.
+  KESTREL_REQUIRE_FILTERS: "1"
+
+  CARGO_PROFILE_RELEASE_LTO: "thin"
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+  CARGO_PROFILE_RELEASE_PANIC: "unwind"
+
+jobs:
+  release:
+    name: Build and release .deb
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build python3 python3-pip \
+            pkg-config curl wget file clang llvm lld \
+            libssl-dev \
+            libgtk-4-dev \
+            libepoxy-dev \
+            libx11-dev libxcb1-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libfontconfig1-dev libfreetype6-dev libharfbuzz-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
+            libgbm-dev libwayland-dev libxkbcommon-dev \
+            libsqlite3-dev \
+            protobuf-compiler \
+            dpkg-dev
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            shared
+            src-servo
+          shared-key: kestrel-release-v1
+          cache-all-crates: true
+          cache-on-failure: true
+          cache-directories: |
+            ~/.cargo/git
+            ~/.cargo/registry
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb --locked
+
+      - name: Build release binary
+        run: time cargo build --release -p kestrel
+
+      - name: Build .deb package
+        run: cargo deb -p kestrel --no-build
+
+      - name: Locate .deb
+        id: deb
+        run: |
+          set -euo pipefail
+          DEB=$(ls target/debian/kestrel_*.deb | head -n 1)
+          if [ -z "$DEB" ]; then
+            echo "No .deb found" >&2
+            exit 1
+          fi
+          echo "path=$DEB" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$DEB")" >> "$GITHUB_OUTPUT"
+          echo "Found: $DEB"
+          dpkg-deb --info "$DEB"
+
+      - name: Compute prerelease flag
+        id: pre
+        run: |
+          REF="${{ github.ref_name }}"
+          case "$REF" in
+            *alpha*|*beta*|*rc*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          prerelease: ${{ steps.pre.outputs.prerelease }}
+          files: |
+            ${{ steps.deb.outputs.path }}
+            target/release/kestrel
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
