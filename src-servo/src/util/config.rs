@@ -27,6 +27,9 @@ impl Config {
         if let Some(v) = db.load_config_item("language") {
             cached.language = v;
         }
+        if let Some(v) = db.load_config_item("adblock_level") {
+            cached.adblock_level = v.parse().unwrap_or(1);
+        }
         Self {
             db,
             cached: RefCell::new(cached),
@@ -47,6 +50,10 @@ impl Config {
 
     pub fn language(&self) -> String {
         self.cached.borrow().language.clone()
+    }
+
+    pub fn adblock_level(&self) -> u8 {
+        self.cached.borrow().adblock_level
     }
 
     pub fn set_homepage(&self, value: &str) -> Result<(), String> {
@@ -80,6 +87,15 @@ impl Config {
             .save_config_item("language", v)
             .map_err(|e| e.to_string())?;
         self.cached.borrow_mut().language = v.to_string();
+        Ok(())
+    }
+
+    pub fn set_adblock_level(&self, level: u8) -> Result<(), String> {
+        let l = level.min(2);
+        self.db
+            .save_config_item("adblock_level", &l.to_string())
+            .map_err(|e| e.to_string())?;
+        self.cached.borrow_mut().adblock_level = l;
         Ok(())
     }
 }
