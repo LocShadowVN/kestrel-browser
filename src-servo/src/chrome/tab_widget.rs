@@ -32,7 +32,7 @@ impl TabWidget {
         body.set_vexpand(false);
 
         let favicon = Image::from_icon_name("text-x-generic-symbolic");
-        favicon.set_pixel_size(14);
+        favicon.set_pixel_size(15);
         favicon.add_css_class("kestrel-tab-favicon");
 
         let label = Label::new(Some(title));
