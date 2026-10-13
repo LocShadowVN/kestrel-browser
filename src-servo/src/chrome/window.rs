@@ -1,8 +1,4 @@
 //! MainWindow — layout: tab strip → toolbar → content.
-//!
-//! Quản lý tabs, kết nối signals từ Servo WebView → UI, xử lý điều hướng
-//! đến các trang nội bộ (kestrel://home, kestrel://settings, kestrel://history,
-//! kestrel://bookmarks).
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -24,7 +20,7 @@ const ABOUT_HTML: &str = r#"<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><title>About Kestrel</title>
 <style>
-  :root { --bg:#fafafa; --fg:#1a1a1a; --muted:#6b6b6b; --accent:#0a84ff; --code:#eee; }
+  :root { --bg:#fafafa; --fg:#1a1a1a; --muted:#6b6b6b; --accent:#4c8dff; --code:#eee; }
   @media (prefers-color-scheme: dark) {
     :root { --bg:#1c1c1e; --fg:#f5f5f7; --muted:#a0a0a8; --code:#2c2c2e; }
   }
@@ -449,7 +445,7 @@ impl MainWindow {
             });
         }
 
-        // ---- Adblock blocked → log ----
+        // ---- Adblock blocked → debug log ----
         {
             webview.connect_adblock_blocked(move |_wv, url, resource_type| {
                 log::debug!("[adblock] blocked: {} ({})", url, resource_type);
@@ -463,14 +459,14 @@ impl MainWindow {
             });
         }
 
-        // ---- Adblock: set level + nạp rules ----
+        // ---- Adblock: set level + send blob ----
         let level = config.adblock_level();
         webview.set_adblock_level(level as i32);
         if level > 0 {
-            let rules = crate::adblock_rules::for_level(level);
-            if !rules.is_empty() {
-                log::info!("Loading {} adblock rules into new tab", rules.len());
-                webview.update_adblock_rules("load", rules);
+            let blob = crate::adblock_rules::get_blob();
+            if !blob.is_empty() {
+                log::debug!("Sending adblock blob to runner ({} KB)", blob.len() / 1024);
+                webview.set_adblock_blob(blob.to_vec());
             }
         }
 
