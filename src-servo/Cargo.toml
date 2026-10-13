@@ -10,12 +10,10 @@ path = "src/main.rs"
 
 [dependencies]
 shared = { path = "../shared" }
-
-# Pin pkcs1 để tránh breaking change của pkcs1 0.8.0-rc.5.
 pkcs1 = { workspace = true }
 
-# Fork servo-gtk có adblock.
-servo-gtk = { git = "https://github.com/LocShadowVN/servo-gtk.git", rev = "91f229e89a8f680009f57eb487d0a4ffda9a9129" }
+servo-gtk = { git = "https://github.com/LocShadowVN/servo-gtk.git", rev = "<HASH>" }
+
 gtk4 = { version = "0.11", features = ["v4_12"] }
 glib = { version = "0.22", features = ["v2_74"] }
 gio = "0.22"
@@ -28,6 +26,10 @@ serde_json = "1.0"
 url = "2.5"
 log = "0.4"
 env_logger = "0.11"
+
+# Adblock engine — pin exact version; blob format phải khớp giữa Kestrel và
+# servo-gtk fork. Bump cả hai cùng lúc khi upgrade.
+adblock = "=0.9.8"
 
 [build-dependencies]
 ureq = "2.10"
