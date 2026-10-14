@@ -12,7 +12,7 @@ path = "src/main.rs"
 shared = { path = "../shared" }
 pkcs1 = { workspace = true }
 
-servo-gtk = { git = "https://github.com/LocShadowVN/servo-gtk.git", rev = "45e325964496a6f12f9ced345bb6817c91da53eb" }
+servo-gtk = { git = "https://github.com/LocShadowVN/servo-gtk.git", rev = "970540865c2c8b032e42b8f5a8fb43750a2b9369" }
 
 gtk4 = { version = "0.11", features = ["v4_12"] }
 glib = { version = "0.22", features = ["v2_74"] }
