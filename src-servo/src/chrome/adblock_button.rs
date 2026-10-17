@@ -1,4 +1,4 @@
-//! Adblock button (Kestrel Shields) — SVG shield icon + badge đếm số quảng cáo đã chặn + popover.
+//! Adblock button (Kestrel Shields) — Tích hợp trực tiếp bên trong thanh Omnibox như Brave.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -27,7 +27,7 @@ impl AdblockLevel {
     pub fn description(self) -> &'static str {
         match self {
             Self::Off => "No network filtering",
-            Self::Standard => "EasyList + EasyPrivacy (Recommended)",
+            Self::Standard => "EasyList + EasyPrivacy",
             Self::Aggressive => "Standard + Fanboy's Annoyances",
         }
     }
@@ -83,13 +83,13 @@ impl AdblockButton {
     {
         let container = MenuButton::new();
         container.set_tooltip_text(Some("Kestrel Shields — Ad & Tracker Blocking"));
-        container.add_css_class("kestrel-shield-button");
+        container.add_css_class("kestrel-omnibox-shield");
         if initial == AdblockLevel::Off {
             container.add_css_class("shield-off");
         }
 
-        let btn_content = GtkBox::new(Orientation::Horizontal, 2);
-        let icon_img = icons::svg_image(initial.svg(), initial.fallback_icon(), 18);
+        let btn_content = GtkBox::new(Orientation::Horizontal, 4);
+        let icon_img = icons::svg_image(initial.svg(), initial.fallback_icon(), 16);
         let badge_label = Label::new(Some("0"));
         badge_label.add_css_class("kestrel-shield-count");
         btn_content.append(&icon_img);
@@ -106,7 +106,6 @@ impl AdblockButton {
         menu.add_css_class("kestrel-menu");
         menu.add_css_class("kestrel-shield-popover");
 
-        // Header thống kê kiểu Brave Shields
         let header = GtkBox::new(Orientation::Vertical, 2);
         header.add_css_class("kestrel-shield-header");
         let popover_stat_num = Label::new(Some("0"));
@@ -149,9 +148,9 @@ impl AdblockButton {
             let container_c = container.clone();
             let icon_img_c = icon_img.clone();
             btn.connect_toggled(move |b| {
-                if b.is_active() {
+                if b.is_active() && current_c.get() != level {
                     current_c.set(level);
-                    icons::set_image_svg(&icon_img_c, level.svg(), level.fallback_icon(), 18);
+                    icons::set_image_svg(&icon_img_c, level.svg(), level.fallback_icon(), 16);
                     if level == AdblockLevel::Off {
                         container_c.add_css_class("shield-off");
                     } else {
@@ -190,11 +189,10 @@ impl AdblockButton {
         &self.container
     }
 
-    /// Cập nhật level mà không kích hoạt lại callback `on_change`.
     pub fn set_level(&self, level: u8) {
         let l = AdblockLevel::from_u8(level);
         self.current.set(l);
-        icons::set_image_svg(&self.icon_img, l.svg(), l.fallback_icon(), 18);
+        icons::set_image_svg(&self.icon_img, l.svg(), l.fallback_icon(), 16);
         if l == AdblockLevel::Off {
             self.container.add_css_class("shield-off");
         } else {
@@ -207,11 +205,10 @@ impl AdblockButton {
         }
     }
 
-    /// Cập nhật số lượng quảng cáo/tracker đã chặn trên tab hiện tại.
     pub fn set_blocked_count(&self, tab_blocked: u32, total_blocked: u64) {
         self.badge_label.set_text(&tab_blocked.to_string());
         self.popover_stat_num
-            .set_text(&format!("{} ({} total)", tab_blocked, total_blocked));
+            .set_text(&format!("{} ({} session total)", tab_blocked, total_blocked));
     }
 
     #[allow(dead_code)]
