@@ -1,4 +1,4 @@
-//! Trang cài đặt nội bộ — kestrel://settings
+//! Trang cài đặt nội bộ — kestrel://settings (Tối giản, đơn sắc).
 
 use crate::internal_pages::NAV_SHIM;
 
@@ -31,69 +31,70 @@ pub fn render(
 <title>Kestrel — {title}</title>
 <style>
   :root {{
-    --bg: #0c0e14; --fg: #f2f4fa; --accent: #ff622d;
-    --card: #161924; --border: #262a3b; --muted: #8e94a8;
+    --bg: #101116; --fg: #e6e8f0; --muted: #8a8f9e;
+    --card: #171921; --border: #252834; --border-focus: #454a5e;
+    --btn-bg: #e6e8f0; --btn-fg: #101116;
   }}
   html.light {{
-    --bg: #f4f6fa; --fg: #151821; --accent: #ff622d;
-    --card: #ffffff; --border: #dcdfe8; --muted: #5e6478;
+    --bg: #f5f6f8; --fg: #16181f; --muted: #606575;
+    --card: #ffffff; --border: #dfe2ea; --border-focus: #8a90a6;
+    --btn-bg: #16181f; --btn-fg: #ffffff;
   }}
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
     background: var(--bg); color: var(--fg); padding: 48px 24px;
   }}
-  .container {{ max-width: 700px; margin: 0 auto; }}
-  h1 {{ font-size: 28px; font-weight: 800; margin-bottom: 24px; letter-spacing: -0.5px; }}
+  .container {{ max-width: 680px; margin: 0 auto; }}
+  h1 {{ font-size: 26px; font-weight: 700; margin-bottom: 24px; letter-spacing: -0.4px; }}
   h2 {{
-    font-size: 12px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 1.2px; color: var(--accent); margin: 28px 0 12px;
+    font-size: 11.5px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 1px; color: var(--muted); margin: 28px 0 10px;
   }}
   .field {{
     background: var(--card); border: 1px solid var(--border);
-    border-radius: 14px; padding: 18px 20px; margin-bottom: 12px;
+    border-radius: 12px; padding: 16px 18px; margin-bottom: 10px;
   }}
-  label {{ display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; }}
-  .hint {{ font-size: 12.5px; color: var(--muted); margin-bottom: 10px; line-height: 1.4; }}
+  label {{ display: block; font-size: 13.5px; font-weight: 600; margin-bottom: 4px; }}
+  .hint {{ font-size: 12px; color: var(--muted); margin-bottom: 10px; line-height: 1.4; }}
   input[type=text], select {{
-    width: 100%; padding: 10px 12px; font-size: 14px;
-    border: 1px solid var(--border); border-radius: 9px;
+    width: 100%; padding: 9px 12px; font-size: 13.5px;
+    border: 1px solid var(--border); border-radius: 8px;
     background: var(--bg); color: var(--fg); outline: none;
   }}
-  input[type=text]:focus, select:focus {{ border-color: var(--accent); }}
-  input[type=checkbox] {{ width: 18px; height: 18px; accent-color: var(--accent); }}
+  input[type=text]:focus, select:focus {{ border-color: var(--border-focus); }}
+  input[type=checkbox] {{ width: 16px; height: 16px; accent-color: var(--fg); }}
   .row {{ display: flex; align-items: center; gap: 10px; }}
   .row label {{ margin: 0; }}
-  .presets {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }}
+  .presets {{ display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }}
   .preset-btn {{
     padding: 5px 10px; font-size: 12px; border-radius: 6px;
     background: var(--bg); color: var(--muted); border: 1px solid var(--border);
     cursor: pointer;
   }}
-  .preset-btn:hover {{ border-color: var(--accent); color: var(--fg); }}
-  .actions {{ margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap; }}
-  button, a.btn {{
-    padding: 10px 22px; font-size: 14px; font-weight: 600;
-    border: none; border-radius: 10px; cursor: pointer;
-    text-decoration: none; display: inline-block;
+  .preset-btn:hover {{ border-color: var(--border-focus); color: var(--fg); }}
+  .actions {{ margin-top: 22px; display: flex; gap: 10px; flex-wrap: wrap; }}
+  button {{
+    padding: 9px 18px; font-size: 13.5px; font-weight: 600;
+    border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
   }}
-  .primary {{ background: var(--accent); color: #fff; }}
-  .secondary {{ background: var(--card); color: var(--fg); border: 1px solid var(--border); }}
-  .danger {{ background: rgba(255, 69, 58, 0.14); color: #ff5b52; border: 1px solid rgba(255, 69, 58, 0.35); }}
-  .status {{ margin-top: 14px; font-size: 13.5px; color: #32d74b; font-weight: 600; min-height: 20px; }}
+  .primary {{ background: var(--btn-bg); color: var(--btn-fg); border-color: var(--btn-bg); }}
+  .secondary {{ background: var(--card); color: var(--fg); }}
+  .secondary:hover {{ border-color: var(--border-focus); }}
+  .status {{ margin-top: 14px; font-size: 13px; color: var(--muted); min-height: 18px; }}
   .about-row {{
     display: flex; justify-content: space-between; align-items: center;
-    padding: 13px 20px; font-size: 14px;
+    padding: 12px 18px; font-size: 13.5px;
   }}
   .about-row + .about-row {{ border-top: 1px solid var(--border); }}
   .about-card {{
     background: var(--card); border: 1px solid var(--border);
-    border-radius: 14px; overflow: hidden;
+    border-radius: 12px; overflow: hidden;
   }}
-  a {{ color: var(--accent); text-decoration: none; }}
+  a {{ color: var(--fg); text-decoration: underline; }}
   .badge {{
-    font-size: 11px; padding: 3px 9px; border-radius: 10px;
-    background: rgba(255, 98, 45, 0.15); color: var(--accent); font-weight: 700;
+    font-size: 11px; padding: 2px 8px; border-radius: 8px;
+    background: var(--bg); border: 1px solid var(--border); color: var(--muted); font-weight: 500;
   }}
 </style>
 </head>
@@ -150,7 +151,7 @@ pub fn render(
       <label>{clear_data_label}</label>
       <div class="hint">{clear_data_hint}</div>
       <div style="display:flex; gap:10px; margin-top:8px;">
-        <button type="button" id="clear-history-btn" class="danger">{clear_history_btn}</button>
+        <button type="button" id="clear-history-btn" class="secondary">{clear_history_btn}</button>
       </div>
     </div>
 
@@ -236,7 +237,7 @@ pub fn render(
         title = t("Settings", "Cài đặt"),
         general = t("GENERAL", "CÀI ĐẶT CHUNG"),
         appearance = t("APPEARANCE", "GIAO DIỆN"),
-        privacy = t("KESTREL SHIELDS & PRIVACY", "KHIÊN BẢO VỆ & RIÊNG TƯ"),
+        privacy = t("SHIELDS & PRIVACY", "KHIÊN CHẮN & RIÊNG TƯ"),
         about = t("ABOUT KESTREL", "GIỚI THIỆU"),
         homepage_label = t("Homepage", "Trang chủ"),
         homepage_hint = t(
@@ -279,8 +280,8 @@ pub fn render(
         clear_history_btn = t("Clear Browsing History", "Xóa lịch sử duyệt web"),
         save = t("Save Changes", "Lưu thay đổi"),
         reset = t("Restore Defaults", "Khôi phục mặc định"),
-        saved_msg = t("✓ Settings saved and applied.", "✓ Đã lưu và áp dụng cài đặt."),
-        cleared_msg = t("✓ Browsing history cleared.", "✓ Đã xóa toàn bộ lịch sử duyệt web."),
+        saved_msg = t("Settings saved.", "Đã lưu cài đặt."),
+        cleared_msg = t("Browsing history cleared.", "Đã xóa lịch sử duyệt web."),
         version_label = t("Version", "Phiên bản"),
         engine_label = t("Engine", "Nhân trình duyệt"),
         license_label = t("License", "Giấy phép"),
