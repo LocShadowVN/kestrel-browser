@@ -1,5 +1,6 @@
-//! Polyfill JavaScript nhẹ và mượt cho Servo Engine.
-//! Không gọi `getBoundingClientRect()` hàng loạt trong Observer để tránh nghẽn IPC Layout.
+//! Polyfill JavaScript nhẹ, mượt + Cosmetic Adblock CSS cho Servo Engine.
+//! - Không gọi `getBoundingClientRect()` hàng loạt trong Observer để tránh nghẽn IPC Layout.
+//! - Tự động bơm bảng CSS ẩn các khung quảng cáo rỗng (Google Ads, Eclick/VnExpress, Admicro, Taboola, MGID...).
 
 pub const POLYFILL_SCRIPT: &str = r#"
 (function () {
@@ -11,7 +12,57 @@ pub const POLYFILL_SCRIPT: &str = r#"
         else if (typeof self !== 'undefined') self.globalThis = self;
     }
 
-    // ---- 2. Promise.withResolvers() — ES2024 ----
+    // ---- 2. Cosmetic Adblock CSS (Ẩn ngay lập tức các khung quảng cáo rỗng trên VnExpress, Dân Trí & quốc tế) ----
+    var COSMETIC_ADBLOCK_CSS = [
+        /* Google AdSense, GPT & DoubleClick */
+        'ins.adsbygoogle, .adsbygoogle, [id^="div-gpt-ad"], [id^="google_ads_iframe"],',
+        'iframe[id^="google_ads_"], iframe[src*="doubleclick.net"], iframe[src*="googlesyndication.com"],',
+        'iframe[src*="adservice.google."], [data-ad-client], [data-ad-slot], [data-google-query-id],',
+        /* VnExpress & FPT Eclick */
+        '[id^="sis_"], [class^="sis_"], [id^="eclick"], [class*="eclick"], iframe[src*="eclick.vn"],',
+        '.banner-ads, .box-ads, .ads-top, .ads-right, .ads-middle, .ads-bottom, .ads-sticky,',
+        '.section_banner_top, .section-banner-top, .banner_top, .wrap-banner-top, .lazy-ads,',
+        '[id^="banner_top"], [id^="ads_"], [class*="banner_ads"], .item_box_ads, .box_quangcao,',
+        '[data-component="Banner"], [data-component-value*="banner"], .header-banner-ads,',
+        /* Admicro / VCCorp (Dân Trí, Kenh14, CafeF, Tuổi Trẻ, Thanh Niên) */
+        '[id^="adm-"], [id^="adm_"], [id^="admicro"], [class*="admicro"], .adm-ads, .admzone,',
+        '[id^="admzone"], iframe[src*="admicro.vn"], iframe[src*="vcmedia.vn/ads"],',
+        '.ads-zone, .qc-box, .box-qc, .banner-qc, .quang-cao, .box-quang-cao,',
+        /* Taboola, Outbrain, MGID, Criteo & Generic EasyList Containers */
+        '.taboola, .outbrain, [id^="taboola-"], [class*="outbrain"], [id^="mgid"], [class*="mgid"],',
+        'iframe[src*="criteo."], .ad-banner, .ad-container, .ad-slot, .ad-wrapper, .ad-placeholder,',
+        '.ad-box, .ad-unit, .ad-leaderboard, .ad-billboard, .advertisement, .sponsored-content',
+        '{',
+        '  display: none !important;',
+        '  visibility: hidden !important;',
+        '  height: 0 !important;',
+        '  min-height: 0 !important;',
+        '  max-height: 0 !important;',
+        '  margin: 0 !important;',
+        '  padding: 0 !important;',
+        '  border: none !important;',
+        '  overflow: hidden !important;',
+        '  pointer-events: none !important;',
+        '}'
+    ].join('\n');
+
+    function injectCosmeticAdblock() {
+        if (typeof document === 'undefined') return;
+        if (document.getElementById('kestrel-cosmetic-adblock')) return;
+        var target = document.head || document.documentElement;
+        if (!target) return;
+        var style = document.createElement('style');
+        style.id = 'kestrel-cosmetic-adblock';
+        style.textContent = COSMETIC_ADBLOCK_CSS;
+        target.appendChild(style);
+    }
+
+    injectCosmeticAdblock();
+    if (typeof document !== 'undefined') {
+        document.addEventListener('DOMContentLoaded', injectCosmeticAdblock, { once: true });
+    }
+
+    // ---- 3. Promise.withResolvers() — ES2024 ----
     if (typeof Promise !== 'undefined' && typeof Promise.withResolvers !== 'function') {
         Object.defineProperty(Promise, 'withResolvers', {
             value: function () {
@@ -27,7 +78,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         });
     }
 
-    // ---- 3. Promise.allSettled() & Promise.any() ----
+    // ---- 4. Promise.allSettled() & Promise.any() ----
     if (typeof Promise !== 'undefined' && typeof Promise.allSettled !== 'function') {
         Object.defineProperty(Promise, 'allSettled', {
             value: function (iterable) {
@@ -80,7 +131,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         });
     }
 
-    // ---- 4. queueMicrotask() ----
+    // ---- 5. queueMicrotask() ----
     if (typeof queueMicrotask !== 'function') {
         globalThis.queueMicrotask = function (cb) {
             if (typeof cb !== 'function') throw new TypeError('queueMicrotask requires a function');
@@ -90,7 +141,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         };
     }
 
-    // ---- 5. Object.hasOwn() & Object.fromEntries() ----
+    // ---- 6. Object.hasOwn() & Object.fromEntries() ----
     if (typeof Object.hasOwn !== 'function') {
         Object.defineProperty(Object, 'hasOwn', {
             value: function (obj, prop) {
@@ -120,7 +171,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         });
     }
 
-    // ---- 6. Object.groupBy() & Map.groupBy() — ES2024 ----
+    // ---- 7. Object.groupBy() & Map.groupBy() — ES2024 ----
     if (typeof Object.groupBy !== 'function') {
         Object.defineProperty(Object, 'groupBy', {
             value: function (items, callbackFn) {
@@ -161,7 +212,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         });
     }
 
-    // ---- 7. Array/String/TypedArray.prototype.at — ES2022 ----
+    // ---- 8. Array/String.prototype.at — ES2022 ----
     function atMethod(n) {
         var len = this.length >>> 0;
         var k = Math.trunc(n) || 0;
@@ -181,7 +232,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         });
     }
 
-    // ---- 8. Array.prototype.flat, flatMap, findLast, findLastIndex ----
+    // ---- 9. Array.prototype.flat, flatMap, findLast, findLastIndex ----
     if (typeof Array.prototype.flat !== 'function') {
         Object.defineProperty(Array.prototype, 'flat', {
             value: function (depth) {
@@ -248,7 +299,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         });
     }
 
-    // ---- 9. ES2023 Change-Array-by-Copy: toSorted, toReversed, toSpliced, with ----
+    // ---- 10. ES2023 Change-Array-by-Copy: toSorted, toReversed, toSpliced, with ----
     if (typeof Array.prototype.toSorted !== 'function') {
         Object.defineProperty(Array.prototype, 'toSorted', {
             value: function (compareFn) { return Array.from(this).sort(compareFn); },
@@ -286,7 +337,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         });
     }
 
-    // ---- 10. String.prototype.replaceAll ----
+    // ---- 11. String.prototype.replaceAll ----
     if (typeof String.prototype.replaceAll !== 'function') {
         Object.defineProperty(String.prototype, 'replaceAll', {
             value: function (search, replacement) {
@@ -302,7 +353,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         });
     }
 
-    // ---- 11. structuredClone() ----
+    // ---- 12. structuredClone() ----
     if (typeof globalThis.structuredClone !== 'function') {
         globalThis.structuredClone = function structuredClone(value) {
             var seen = new WeakMap();
@@ -348,7 +399,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         };
     }
 
-    // ---- 12. crypto.randomUUID() & URL.canParse() ----
+    // ---- 13. crypto.randomUUID() & URL.canParse() ----
     if (typeof crypto !== 'undefined' &&
         typeof crypto.randomUUID !== 'function' &&
         typeof crypto.getRandomValues === 'function') {
@@ -383,7 +434,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         });
     }
 
-    // ---- 13. requestIdleCallback() ----
+    // ---- 14. requestIdleCallback() ----
     if (typeof requestIdleCallback !== 'function') {
         globalThis.requestIdleCallback = function (cb) {
             var start = Date.now();
@@ -399,7 +450,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         globalThis.cancelIdleCallback = function (handle) { clearTimeout(handle); };
     }
 
-    // ---- 14. Lightweight Batched ResizeObserver & IntersectionObserver (Không gọi getBoundingClientRect) ----
+    // ---- 15. Lightweight Batched ResizeObserver & IntersectionObserver (Không gọi getBoundingClientRect) ----
     var DEFAULT_RECT = { x: 0, y: 0, width: 100, height: 100, top: 0, left: 0, right: 100, bottom: 100 };
     var DEFAULT_BOX = [{ inlineSize: 100, blockSize: 100 }];
 
@@ -480,7 +531,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         globalThis.IntersectionObserver.prototype.takeRecords = function () { return []; };
     }
 
-    // ---- 15. PerformanceObserver & Element.animate Stub ----
+    // ---- 16. PerformanceObserver & Element.animate Stub ----
     if (typeof globalThis.PerformanceObserver === 'undefined') {
         globalThis.PerformanceObserver = function PerformanceObserver() {};
         globalThis.PerformanceObserver.supportedEntryTypes = [];
@@ -506,6 +557,6 @@ pub const POLYFILL_SCRIPT: &str = r#"
         };
     }
 
-    console.log('[Kestrel] polyfills loaded');
+    console.log('[Kestrel] polyfills & cosmetic adblock CSS loaded');
 })();
 "#;
