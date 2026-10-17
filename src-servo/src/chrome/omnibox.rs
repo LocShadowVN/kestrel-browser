@@ -1,18 +1,19 @@
-//! Omnibox — Thanh địa chỉ hiện đại kiểu Brave:
-//! [ Icon bảo mật (HTTPS / Kestrel / Search) ] [ Entry nhập URL ] [ Nút sao Bookmark ]
+//! Omnibox — Thanh địa chỉ tích hợp chuẩn Brave:
+//! [ Icon bảo mật ] [ Ô nhập địa chỉ / tìm kiếm ] [ Ngôi sao Bookmark ] [ | ] [ Khiên Shields + Số đếm ]
 
 use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use gtk4::{Box as GtkBox, Button, Entry, Image, Label, Orientation};
+use gtk4::{Box as GtkBox, Button, Entry, Image, Orientation, Separator};
 
+use crate::chrome::adblock_button::AdblockButton;
 use crate::chrome::icons;
 
 pub struct Omnibox {
     container: GtkBox,
     security_icon: Image,
-    scheme_badge: Label,
+    security_state: Cell<u8>,
     entry: Entry,
     star_btn: Button,
     star_icon: Image,
@@ -20,40 +21,41 @@ pub struct Omnibox {
 }
 
 impl Omnibox {
-    pub fn new() -> Self {
+    pub fn new(adblock: &Rc<AdblockButton>) -> Self {
         let container = GtkBox::new(Orientation::Horizontal, 4);
         container.add_css_class("kestrel-omnibox-box");
         container.set_hexpand(true);
 
         let security_icon =
-            icons::svg_image(icons::KESTREL_BADGE, "channel-secure-symbolic", 15);
+            icons::svg_image(icons::KESTREL_BADGE, "web-browser-symbolic", 14);
         security_icon.add_css_class("kestrel-omnibox-security");
         security_icon.set_tooltip_text(Some("Kestrel Internal Page"));
 
-        let scheme_badge = Label::new(Some("Kestrel"));
-        scheme_badge.add_css_class("kestrel-omnibox-scheme-badge");
-
         let entry = Entry::builder()
-            .placeholder_text("Search with Brave or enter address...")
+            .placeholder_text("Search the web or enter address...")
             .hexpand(true)
             .build();
         entry.add_css_class("kestrel-omnibox-entry");
 
-        let star_icon = icons::svg_image(icons::STAR_OUTLINE, "non-starred-symbolic", 16);
+        let star_icon = icons::svg_image(icons::STAR_OUTLINE, "non-starred-symbolic", 15);
         let star_btn = Button::new();
         star_btn.set_child(Some(&star_icon));
-        star_btn.add_css_class("kestrel-omnibox-star");
+        star_btn.add_css_class("kestrel-omnibox-action");
         star_btn.set_tooltip_text(Some("Bookmark this page (Ctrl+D)"));
 
+        let divider = Separator::new(Orientation::Vertical);
+        divider.add_css_class("kestrel-omnibox-divider");
+
         container.append(&security_icon);
-        container.append(&scheme_badge);
         container.append(&entry);
         container.append(&star_btn);
+        container.append(&divider);
+        container.append(adblock.widget());
 
         Self {
             container,
             security_icon,
-            scheme_badge,
+            security_state: Cell::new(0),
             entry,
             star_btn,
             star_icon,
@@ -73,18 +75,24 @@ impl Omnibox {
     }
 
     pub fn set_text(&self, text: &str) {
-        self.entry.set_text(text);
+        if self.entry.text().as_str() != text {
+            self.entry.set_text(text);
+        }
         self.update_security_indicator(text);
     }
 
+    #[allow(dead_code)]
     pub fn text(&self) -> String {
         self.entry.text().to_string()
     }
 
     pub fn set_bookmarked(&self, is_bookmarked: bool) {
+        if self.bookmarked.get() == is_bookmarked {
+            return;
+        }
         self.bookmarked.set(is_bookmarked);
         if is_bookmarked {
-            icons::set_image_svg(&self.star_icon, icons::STAR_FILLED, "starred-symbolic", 16);
+            icons::set_image_svg(&self.star_icon, icons::STAR_FILLED, "starred-symbolic", 15);
             self.star_btn
                 .set_tooltip_text(Some("Remove bookmark (Ctrl+D)"));
         } else {
@@ -92,61 +100,76 @@ impl Omnibox {
                 &self.star_icon,
                 icons::STAR_OUTLINE,
                 "non-starred-symbolic",
-                16,
+                15,
             );
             self.star_btn
                 .set_tooltip_text(Some("Bookmark this page (Ctrl+D)"));
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_bookmarked(&self) -> bool {
         self.bookmarked.get()
     }
 
     fn update_security_indicator(&self, url: &str) {
         let u = url.trim();
-        if u.starts_with("https://") {
-            icons::set_image_svg(
-                &self.security_icon,
-                icons::LOCK_SECURE,
-                "channel-secure-symbolic",
-                15,
-            );
-            self.security_icon
-                .set_tooltip_text(Some("Connection is secure (HTTPS)"));
-            self.scheme_badge.set_visible(false);
+        let new_state = if u.starts_with("https://") {
+            1
         } else if u.starts_with("http://") {
-            icons::set_image_svg(
-                &self.security_icon,
-                icons::INFO_INSECURE,
-                "dialog-warning-symbolic",
-                15,
-            );
-            self.security_icon
-                .set_tooltip_text(Some("Connection is not encrypted (HTTP)"));
-            self.scheme_badge.set_text("Not Secure");
-            self.scheme_badge.set_visible(true);
+            2
         } else if u.starts_with("kestrel://") || u == "kestrel:" {
-            icons::set_image_svg(
-                &self.security_icon,
-                icons::KESTREL_BADGE,
-                "web-browser-symbolic",
-                16,
-            );
-            self.security_icon
-                .set_tooltip_text(Some("Kestrel Internal Page"));
-            self.scheme_badge.set_text("Kestrel");
-            self.scheme_badge.set_visible(true);
+            3
         } else {
-            icons::set_image_svg(
-                &self.security_icon,
-                icons::SEARCH_ICON,
-                "system-search-symbolic",
-                15,
-            );
-            self.security_icon
-                .set_tooltip_text(Some("Search or enter URL"));
-            self.scheme_badge.set_visible(false);
+            4
+        };
+
+        if self.security_state.get() == new_state {
+            return;
+        }
+        self.security_state.set(new_state);
+
+        match new_state {
+            1 => {
+                icons::set_image_svg(
+                    &self.security_icon,
+                    icons::LOCK_SECURE,
+                    "channel-secure-symbolic",
+                    14,
+                );
+                self.security_icon
+                    .set_tooltip_text(Some("Connection is secure (HTTPS)"));
+            }
+            2 => {
+                icons::set_image_svg(
+                    &self.security_icon,
+                    icons::INFO_INSECURE,
+                    "dialog-warning-symbolic",
+                    14,
+                );
+                self.security_icon
+                    .set_tooltip_text(Some("Connection is not encrypted (HTTP)"));
+            }
+            3 => {
+                icons::set_image_svg(
+                    &self.security_icon,
+                    icons::KESTREL_BADGE,
+                    "web-browser-symbolic",
+                    14,
+                );
+                self.security_icon
+                    .set_tooltip_text(Some("Kestrel Internal Page"));
+            }
+            _ => {
+                icons::set_image_svg(
+                    &self.security_icon,
+                    icons::SEARCH_ICON,
+                    "system-search-symbolic",
+                    14,
+                );
+                self.security_icon
+                    .set_tooltip_text(Some("Search or enter address"));
+            }
         }
     }
 
@@ -157,11 +180,5 @@ impl Omnibox {
 
     pub fn widget(&self) -> &GtkBox {
         &self.container
-    }
-}
-
-impl Default for Omnibox {
-    fn default() -> Self {
-        Self::new()
     }
 }
