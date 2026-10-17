@@ -1,8 +1,11 @@
 //! MainWindow — layout: tab strip → toolbar → content.
-//! Sửa lỗi `connect_uri_notify` tự xóa `blocked_count` khi redirect dấu `/` hoặc `www.`.
+//! - Hiển thị cửa sổ (`window.present()`) trước khi mở tab để `WebView` được realize ngay.
+//! - Đồng bộ `adblock_blob` ngay khi tiến trình con Servo runner đã sẵn sàng.
+//! - Không bao giờ xóa `blocked_count` trong `connect_uri_notify`, giúp bộ đếm Shields nhảy chuẩn xác.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::time::Duration;
 
 use gtk4::gdk;
 use gtk4::glib;
@@ -103,11 +106,15 @@ impl MainWindow {
                 if let Err(e) = config_c.set_adblock_level(level) {
                     log::warn!("Failed to save adblock level: {e}");
                 }
-                let blob = crate::adblock_rules::get_blob();
+                let maybe_blob = crate::adblock_rules::try_get_blob();
                 for tab in tabs_c.borrow().iter() {
                     tab.webview.set_adblock_level(level as i32);
-                    if level > 0 && !blob.is_empty() {
-                        tab.webview.set_adblock_blob(blob.to_vec());
+                    if level > 0 {
+                        if let Some(blob) = maybe_blob {
+                            if !blob.is_empty() {
+                                tab.webview.set_adblock_blob(blob.to_vec());
+                            }
+                        }
                     }
                 }
             }
@@ -152,8 +159,6 @@ impl MainWindow {
                 let id = active_c.get();
                 if let Some(tab) = tabs_c.borrow().iter().find(|t| t.tab_id == id) {
                     let current_url = tab.logical_url.borrow().clone();
-                    tab.blocked_count.set(0);
-                    toolbar_c.adblock().set_blocked_count(0, total_c.get());
                     if internal_pages::is_internal(&current_url) || current_url == "kestrel://about"
                     {
                         navigate_tab(
@@ -508,8 +513,6 @@ impl MainWindow {
                     let id = active_c.get();
                     if let Some(tab) = tabs_c.borrow().iter().find(|t| t.tab_id == id) {
                         let current_url = tab.logical_url.borrow().clone();
-                        tab.blocked_count.set(0);
-                        toolbar_c.adblock().set_blocked_count(0, total_c.get());
                         if internal_pages::is_internal(&current_url)
                             || current_url == "kestrel://about"
                         {
@@ -720,6 +723,9 @@ impl MainWindow {
         vbox.append(tabbar.content_widget());
         window.set_child(Some(&vbox));
 
+        // QUAN TRỌNG: Hiện cửa sổ TRƯỚC KHI tạo tab đầu tiên để WebView/GLArea được realize ngay lập tức
+        window.present();
+
         // ---- Mở tab đầu tiên ----
         {
             let homepage = config.homepage();
@@ -804,6 +810,7 @@ impl MainWindow {
         let logical_url = Rc::new(RefCell::new(url.to_string()));
         let blocked_count = Rc::new(Cell::new(0u32));
         let loading = Rc::new(Cell::new(false));
+        let blob_synced = Rc::new(Cell::new(false));
 
         let tab_id = {
             let window_c = window.clone();
@@ -863,7 +870,7 @@ impl MainWindow {
                                     &tabbar_c,
                                     &window_c,
                                     &total_c,
-                                    id == active_c.get(),
+                                    true,
                                 );
                             }
                         }
@@ -897,12 +904,34 @@ impl MainWindow {
                             let level = (ab as u8).min(2);
                             let _ = config_c.set_adblock_level(level);
                             toolbar_c.set_adblock_level(level);
-                            let blob = crate::adblock_rules::get_blob();
+                            let maybe_blob = crate::adblock_rules::try_get_blob();
                             for t in tabs_c.borrow().iter() {
                                 t.webview.set_adblock_level(level as i32);
-                                if level > 0 && !blob.is_empty() {
-                                    t.webview.set_adblock_blob(blob.to_vec());
+                                if level > 0 {
+                                    if let Some(blob) = maybe_blob {
+                                        if !blob.is_empty() {
+                                            t.webview.set_adblock_blob(blob.to_vec());
+                                        }
+                                    }
                                 }
+                            }
+                        }
+                        // Render lại trang Settings để áp dụng ngôn ngữ / giao diện mới ngay lập tức
+                        let id = active_c.get();
+                        if let Some(tab) = tabs_c.borrow().iter().find(|t| t.tab_id == id) {
+                            let cur = tab.logical_url.borrow().clone();
+                            if internal_pages::classify(&cur) == Some(Page::Settings) {
+                                navigate_tab(
+                                    tab,
+                                    "kestrel://settings",
+                                    &db_c,
+                                    &config_c,
+                                    &toolbar_c,
+                                    &tabbar_c,
+                                    &window_c,
+                                    &total_c,
+                                    true,
+                                );
                             }
                         }
                         log::info!("Settings saved and applied.");
@@ -1037,7 +1066,7 @@ impl MainWindow {
             });
         }
 
-        // ---- URI changed (CHỈ reset blocked_count khi sang domain mới!) ----
+        // ---- URI changed (TUYỆT ĐỐI KHÔNG reset blocked_count ở đây!) ----
         {
             let toolbar_c = toolbar.clone();
             let active_c = active_tab_id.clone();
@@ -1050,12 +1079,7 @@ impl MainWindow {
                     if uri.starts_with("data:") {
                         return;
                     }
-                    let prev = logical_c.borrow().clone();
-                    let domain_changed = !same_site_domain(&prev, &uri);
                     *logical_c.borrow_mut() = uri.clone();
-                    if domain_changed {
-                        blocked_c.set(0);
-                    }
                     if active_c.get() == tab_id {
                         toolbar_c.omnibox().set_text(&uri);
                         toolbar_c.omnibox().set_bookmarked(db_c.is_bookmarked(&uri));
@@ -1067,7 +1091,7 @@ impl MainWindow {
             });
         }
 
-        // ---- Load state changed ----
+        // ---- Load state changed + Đảm bảo gửi adblock_blob khi runner đã sống ----
         {
             let db_c = db.clone();
             let tabbar_c = tabbar.clone();
@@ -1075,7 +1099,20 @@ impl MainWindow {
             let active_c = active_tab_id.clone();
             let logical_c = logical_url.clone();
             let loading_c = loading.clone();
+            let config_c = config.clone();
+            let synced_c = blob_synced.clone();
             webview.connect_load_changed(move |wv, event| {
+                if !synced_c.get() {
+                    if let Some(blob) = crate::adblock_rules::try_get_blob() {
+                        let lv = config_c.adblock_level();
+                        wv.set_adblock_level(lv as i32);
+                        if !blob.is_empty() {
+                            wv.set_adblock_blob(blob.to_vec());
+                            synced_c.set(true);
+                        }
+                    }
+                }
+
                 let current_logical = logical_c.borrow().clone();
                 let is_internal = internal_pages::is_internal(&current_logical)
                     || current_logical == "kestrel://about";
@@ -1115,11 +1152,13 @@ impl MainWindow {
             let active_c = active_tab_id.clone();
             let toolbar_c = toolbar.clone();
             webview.connect_adblock_blocked(move |_wv, url, resource_type| {
-                log::info!("[Shields] blocked: {} ({})", url, resource_type);
                 let new_tab_count = blocked_c.get().saturating_add(1);
                 let new_total = total_c.get().saturating_add(1);
                 blocked_c.set(new_tab_count);
                 total_c.set(new_total);
+                log::info!(
+                    "[Shields] Blocked #{new_tab_count} (total {new_total}): {url} ({resource_type})"
+                );
                 if active_c.get() == tab_id {
                     toolbar_c
                         .adblock()
@@ -1156,12 +1195,34 @@ impl MainWindow {
             });
         }
 
-        // ---- Adblock: Gọi set_adblock_level TRƯỚC set_adblock_blob theo chuẩn servo-gtk ----
-        let level = config.adblock_level();
-        webview.set_adblock_level(level as i32);
-        let blob = crate::adblock_rules::get_blob();
-        if !blob.is_empty() {
-            webview.set_adblock_blob(blob.to_vec());
+        // ---- Đồng bộ adblock_blob bất đồng bộ ngay khi WebView đã realize và blob đã nạp xong ----
+        {
+            let wv_c = webview.clone();
+            let config_c = config.clone();
+            let synced_c = blob_synced.clone();
+            glib::timeout_add_local(Duration::from_millis(120), move || {
+                if synced_c.get() {
+                    return glib::ControlFlow::Break;
+                }
+                if !wv_c.is_realized() {
+                    return glib::ControlFlow::Continue;
+                }
+                if let Some(blob) = crate::adblock_rules::try_get_blob() {
+                    let level = config_c.adblock_level();
+                    wv_c.set_adblock_level(level as i32);
+                    if !blob.is_empty() {
+                        log::info!(
+                            "Synced adblock blob to realized runner ({} KB, level={})",
+                            blob.len() / 1024,
+                            level
+                        );
+                        wv_c.set_adblock_blob(blob.to_vec());
+                    }
+                    synced_c.set(true);
+                    return glib::ControlFlow::Break;
+                }
+                glib::ControlFlow::Continue
+            });
         }
 
         let entry = TabEntry {
@@ -1195,21 +1256,6 @@ impl MainWindow {
     }
 }
 
-/// Kiểm tra xem 2 URL có cùng một tên miền gốc hay không (bỏ qua tiền tố `www.` và dấu `/`).
-fn same_site_domain(a: &str, b: &str) -> bool {
-    let host_a = url::Url::parse(a)
-        .ok()
-        .and_then(|u| u.host_str().map(|h| h.trim_start_matches("www.").to_lowercase()));
-    let host_b = url::Url::parse(b)
-        .ok()
-        .and_then(|u| u.host_str().map(|h| h.trim_start_matches("www.").to_lowercase()));
-
-    match (host_a, host_b) {
-        (Some(ha), Some(hb)) => ha == hb,
-        _ => a.trim_end_matches('/') == b.trim_end_matches('/'),
-    }
-}
-
 fn apply_window_theme(window: &ApplicationWindow, dark: bool) {
     if dark {
         window.remove_css_class("theme-light");
@@ -1234,7 +1280,12 @@ fn toggle_active_bookmark(
             return;
         };
 
-        if url.is_empty() || url.starts_with("data:") || url == "about:blank" {
+        if url.is_empty()
+            || url.starts_with("data:")
+            || url == "about:blank"
+            || internal_pages::is_internal(&url)
+            || url == "kestrel://about"
+        {
             return;
         }
 
