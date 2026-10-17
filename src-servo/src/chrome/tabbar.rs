@@ -1,5 +1,4 @@
-//! TabBar — Quản lý các tab bằng `tab_id: u64` duy nhất và tra cứu động `notebook.page_num`
-//! để loại bỏ hoàn toàn lỗi lệch chỉ mục khi đóng tab ở giữa.
+//! TabBar — Quản lý các tab bằng `tab_id: u64` duy nhất và tra cứu động `notebook.page_num`.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -71,7 +70,6 @@ impl TabBar {
         }
     }
 
-    /// Thêm tab mới và trả về `tab_id` duy nhất (không bị đổi khi đóng các tab trước đó).
     pub fn add_tab<W, FC>(&self, content: &W, title: &str, on_close: FC) -> u64
     where
         W: IsA<Widget>,
@@ -98,15 +96,16 @@ impl TabBar {
             )
         };
 
-        let page_num = self.notebook.append_page(&content_widget, None::<&Widget>);
         self.tabs_area.append(tab.widget());
 
+        // Đẩy vào danh sách TRƯỚC khi gọi append_page vì append_page bắn sự kiện switch-page ngay lập tức
         self.tabs.borrow_mut().push(Rc::new(TabMeta {
             tab_id,
             widget: tab,
-            content: content_widget,
+            content: content_widget.clone(),
         }));
 
+        let page_num = self.notebook.append_page(&content_widget, None::<&Widget>);
         self.notebook.set_current_page(Some(page_num));
         self.update_active_classes();
         tab_id
@@ -202,7 +201,6 @@ impl TabBar {
         }
     }
 
-    /// Gọi callback với `tab_id` của tab vừa được chọn.
     pub fn on_switch<F: Fn(u64) + 'static>(&self, cb: F) {
         let tabs_c = self.tabs.clone();
         self.notebook
