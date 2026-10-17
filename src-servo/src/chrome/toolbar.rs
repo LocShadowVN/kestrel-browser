@@ -1,4 +1,4 @@
-//! Toolbar — Các nút điều hướng SVG + Omnibox + Kestrel Shields + Bookmarks + Menu + ProgressBar.
+//! Toolbar — Các nút điều hướng SVG + Omnibox (tích hợp sẵn Star & Shields) + Bookmarks + Menu.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -48,7 +48,7 @@ impl Toolbar {
         let back = icons::svg_button(
             icons::ARROW_LEFT,
             "go-previous-symbolic",
-            18,
+            17,
             "Back (Alt+Left)",
         );
         back.add_css_class("kestrel-toolbar-button");
@@ -56,31 +56,32 @@ impl Toolbar {
         let forward = icons::svg_button(
             icons::ARROW_RIGHT,
             "go-next-symbolic",
-            18,
+            17,
             "Forward (Alt+Right)",
         );
         forward.add_css_class("kestrel-toolbar-button");
 
-        let reload_icon = icons::svg_image(icons::RELOAD, "view-refresh-symbolic", 17);
+        let reload_icon = icons::svg_image(icons::RELOAD, "view-refresh-symbolic", 16);
         let reload = Button::new();
         reload.set_child(Some(&reload_icon));
         reload.set_tooltip_text(Some("Reload (Ctrl+R)"));
         reload.add_css_class("kestrel-toolbar-button");
 
-        let home = icons::svg_button(icons::HOME, "go-home-symbolic", 17, "Home");
+        let home = icons::svg_button(icons::HOME, "go-home-symbolic", 16, "Home");
         home.add_css_class("kestrel-toolbar-button");
-
-        let omnibox = Rc::new(Omnibox::new());
 
         let adblock = Rc::new(AdblockButton::new(
             AdblockLevel::Standard,
             on_adblock_change,
         ));
 
+        // Omnibox chứa luôn cả nút Star và nút Shields ở bên phải giống Brave
+        let omnibox = Rc::new(Omnibox::new(&adblock));
+
         let bookmarks_btn = icons::svg_button(
             icons::BOOKMARKS_ICON,
             "user-bookmarks-symbolic",
-            17,
+            16,
             "Bookmarks (Ctrl+B)",
         );
         bookmarks_btn.add_css_class("kestrel-toolbar-button");
@@ -139,7 +140,7 @@ impl Toolbar {
         popover.set_has_arrow(false);
 
         let menu = MenuButton::new();
-        let menu_img = icons::svg_image(icons::MENU, "open-menu-symbolic", 18);
+        let menu_img = icons::svg_image(icons::MENU, "open-menu-symbolic", 17);
         menu.set_child(Some(&menu_img));
         menu.set_tooltip_text(Some("Menu"));
         menu.add_css_class("kestrel-toolbar-button");
@@ -150,7 +151,6 @@ impl Toolbar {
         container.append(&reload);
         container.append(&home);
         container.append(omnibox.widget());
-        container.append(adblock.widget());
         container.append(&bookmarks_btn);
         container.append(&menu);
 
@@ -198,9 +198,12 @@ impl Toolbar {
     }
 
     pub fn set_loading(&self, loading: bool) {
+        if self.is_loading.get() == loading {
+            return;
+        }
         self.is_loading.set(loading);
         if loading {
-            icons::set_image_svg(&self.reload_icon, icons::STOP, "process-stop-symbolic", 17);
+            icons::set_image_svg(&self.reload_icon, icons::STOP, "process-stop-symbolic", 16);
             self.reload.set_tooltip_text(Some("Stop loading"));
             self.progress.set_fraction(0.35);
             self.progress.set_visible(true);
@@ -209,7 +212,7 @@ impl Toolbar {
                 &self.reload_icon,
                 icons::RELOAD,
                 "view-refresh-symbolic",
-                17,
+                16,
             );
             self.reload.set_tooltip_text(Some("Reload (Ctrl+R)"));
             self.progress.set_fraction(1.0);
