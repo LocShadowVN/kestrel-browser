@@ -185,6 +185,14 @@ pub const POLYFILL_SCRIPT: &str = r#"
             value: atMethod, writable: true, configurable: true
         });
     }
+    if (typeof Uint8Array !== 'undefined') {
+        var typedArrayProto = Object.getPrototypeOf(Uint8Array.prototype);
+        if (typedArrayProto && typeof typedArrayProto.at !== 'function') {
+            Object.defineProperty(typedArrayProto, 'at', {
+                value: atMethod, writable: true, configurable: true
+            });
+        }
+    }
 
     // ---- 8. Array.prototype.flat & flatMap (ES2019) ----
     if (typeof Array.prototype.flat !== 'function') {
@@ -641,7 +649,121 @@ pub const POLYFILL_SCRIPT: &str = r#"
         };
     }
 
-    // ---- 20. Element.prototype.animate / getAnimations / checkVisibility ----
+    // ---- 20. PerformanceObserver Fallback (Ngăn crash từ Next.js / Core Web Vitals / Sentry) ----
+    if (typeof globalThis.PerformanceObserver === 'undefined') {
+        globalThis.PerformanceObserver = function PerformanceObserver(callback) {
+            this._cb = callback;
+        };
+        globalThis.PerformanceObserver.supportedEntryTypes = [];
+        globalThis.PerformanceObserver.prototype.observe = function () {};
+        globalThis.PerformanceObserver.prototype.disconnect = function () {};
+        globalThis.PerformanceObserver.prototype.takeRecords = function () { return []; };
+    }
+
+    // ---- 21. window.visualViewport Fallback (Ngăn crash trên Floating UI / Popper / Radix) ----
+    if (typeof window !== 'undefined' && typeof window.visualViewport === 'undefined') {
+        var vvListeners = {};
+        window.visualViewport = {
+            get width() { return window.innerWidth || 1280; },
+            get height() { return window.innerHeight || 800; },
+            offsetLeft: 0,
+            offsetTop: 0,
+            pageLeft: 0,
+            pageTop: 0,
+            scale: 1,
+            addEventListener: function (type, cb) {
+                if (!vvListeners[type]) vvListeners[type] = [];
+                vvListeners[type].push(cb);
+                if (type === 'resize' || type === 'scroll') {
+                    window.addEventListener(type, cb);
+                }
+            },
+            removeEventListener: function (type, cb) {
+                if (type === 'resize' || type === 'scroll') {
+                    window.removeEventListener(type, cb);
+                }
+            }
+        };
+    }
+
+    // ---- 22. BroadcastChannel Fallback (Ngăn crash trên NextAuth / Supabase / Firebase) ----
+    if (typeof globalThis.BroadcastChannel === 'undefined') {
+        var channels = {};
+        globalThis.BroadcastChannel = function BroadcastChannel(name) {
+            this.name = String(name);
+            this.onmessage = null;
+            this.onmessageerror = null;
+            this._listeners = [];
+            if (!channels[this.name]) channels[this.name] = [];
+            channels[this.name].push(this);
+        };
+        globalThis.BroadcastChannel.prototype.postMessage = function (msg) {
+            var self = this;
+            var list = channels[this.name] || [];
+            setTimeout(function () {
+                list.forEach(function (peer) {
+                    if (peer === self) return;
+                    var evt = { data: msg, target: peer };
+                    if (typeof peer.onmessage === 'function') peer.onmessage(evt);
+                    peer._listeners.forEach(function (fn) { fn(evt); });
+                });
+            }, 0);
+        };
+        globalThis.BroadcastChannel.prototype.addEventListener = function (type, fn) {
+            if (type === 'message' && typeof fn === 'function') this._listeners.push(fn);
+        };
+        globalThis.BroadcastChannel.prototype.removeEventListener = function (type, fn) {
+            if (type === 'message') {
+                this._listeners = this._listeners.filter(function (f) { return f !== fn; });
+            }
+        };
+        globalThis.BroadcastChannel.prototype.close = function () {
+            var self = this;
+            if (channels[this.name]) {
+                channels[this.name] = channels[this.name].filter(function (p) { return p !== self; });
+            }
+        };
+    }
+
+    // ---- 23. window.matchMedia Dual Listener Compatibility ----
+    if (typeof window !== 'undefined') {
+        if (typeof window.matchMedia !== 'function') {
+            window.matchMedia = function (query) {
+                return {
+                    matches: false,
+                    media: String(query),
+                    onchange: null,
+                    addListener: function () {},
+                    removeListener: function () {},
+                    addEventListener: function () {},
+                    removeEventListener: function () {},
+                    dispatchEvent: function () { return false; }
+                };
+            };
+        } else {
+            var origMatchMedia = window.matchMedia.bind(window);
+            window.matchMedia = function (query) {
+                var mql = origMatchMedia(query);
+                if (mql) {
+                    if (typeof mql.addEventListener !== 'function' && typeof mql.addListener === 'function') {
+                        mql.addEventListener = function (type, listener) {
+                            if (type === 'change') mql.addListener(listener);
+                        };
+                        mql.removeEventListener = function (type, listener) {
+                            if (type === 'change') mql.removeListener(listener);
+                        };
+                    }
+                    if (typeof mql.addListener !== 'function' && typeof mql.addEventListener === 'function') {
+                        mql.addListener = function (listener) { mql.addEventListener('change', listener); };
+                        mql.removeListener = function (listener) { mql.removeEventListener('change', listener); };
+                    }
+                }
+                return mql;
+            };
+        }
+    }
+
+    // ---- 24. Element.prototype.animate / getAnimations / checkVisibility ----
     if (typeof Element !== 'undefined') {
         if (typeof Element.prototype.animate !== 'function') {
             Element.prototype.animate = function () {
@@ -684,7 +806,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         }
     }
 
-    // ---- 21. CSS.supports() & CSS.escape() ----
+    // ---- 25. CSS.supports() & CSS.escape() ----
     if (typeof globalThis.CSS === 'undefined') {
         globalThis.CSS = {};
     }
@@ -697,7 +819,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         };
     }
 
-    // ---- 22. navigator.clipboard, sendBeacon & userAgentData ----
+    // ---- 26. navigator.clipboard & sendBeacon ----
     if (typeof navigator !== 'undefined') {
         if (!navigator.clipboard) {
             var clipText = '';
@@ -723,6 +845,6 @@ pub const POLYFILL_SCRIPT: &str = r#"
         }
     }
 
-    console.log('[Kestrel] Web compatibility polyfills v2 loaded');
+    console.log('[Kestrel] Web compatibility polyfills v3 loaded');
 })();
 "#;
