@@ -1,4 +1,4 @@
-//! Trang bookmark nội bộ — kestrel://bookmarks
+//! Trang bookmark nội bộ — kestrel://bookmarks (Đơn sắc, tối giản).
 
 use crate::internal_pages::NAV_SHIM;
 
@@ -13,10 +13,12 @@ pub fn render(records: &[(i64, String, String)], lang: &str, dark: bool) -> Stri
     for (id, url, title) in records {
         rows.push_str(&format!(
             r#"<li class="item" data-search="{search_text}">
-  <div class="fav">★</div>
+  <svg class="bm-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
   <a class="title" href="{url}">{title}</a>
   <span class="url">{url}</span>
-  <button class="remove" data-id="{id}" title="Remove">×</button>
+  <button class="remove" data-id="{id}" title="Remove">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+  </button>
 </li>"#,
             id = id,
             url = escape(url),
@@ -28,8 +30,8 @@ pub fn render(records: &[(i64, String, String)], lang: &str, dark: bool) -> Stri
         rows.push_str(&format!(
             r#"<li class="empty">{}</li>"#,
             t(
-                "No bookmarks yet. Click the star icon ★ in the address bar (or press Ctrl+D) to save a page.",
-                "Chưa có trang đánh dấu nào. Nhấn biểu tượng ngôi sao ★ trên thanh địa chỉ (hoặc Ctrl+D) để lưu trang."
+                "No bookmarks yet. Click the star icon in the address bar (or press Ctrl+D) to save a page.",
+                "Chưa có trang đánh dấu nào. Nhấn biểu tượng ngôi sao trên thanh địa chỉ (hoặc Ctrl+D) để lưu trang."
             )
         ));
     }
@@ -42,67 +44,69 @@ pub fn render(records: &[(i64, String, String)], lang: &str, dark: bool) -> Stri
 <title>Kestrel — {heading}</title>
 <style>
   :root {{
-    --bg: #0c0e14; --fg: #f2f4fa; --accent: #ff622d;
-    --card: #161924; --border: #262a3b; --muted: #8e94a8;
+    --bg: #101116; --fg: #e6e8f0; --muted: #8a8f9e;
+    --card: #171921; --border: #252834; --border-focus: #454a5e;
+    --btn-bg: #e6e8f0; --btn-fg: #101116;
   }}
   html.light {{
-    --bg: #f4f6fa; --fg: #151821; --accent: #ff622d;
-    --card: #ffffff; --border: #dcdfe8; --muted: #5e6478;
+    --bg: #f5f6f8; --fg: #16181f; --muted: #606575;
+    --card: #ffffff; --border: #dfe2ea; --border-focus: #8a90a6;
+    --btn-bg: #16181f; --btn-fg: #ffffff;
   }}
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
     background: var(--bg); color: var(--fg); padding: 48px 24px;
   }}
-  .container {{ max-width: 840px; margin: 0 auto; }}
-  .top-bar {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }}
-  h1 {{ font-size: 28px; font-weight: 800; }}
-  .count {{ font-size: 13px; color: var(--muted); }}
+  .container {{ max-width: 820px; margin: 0 auto; }}
+  .top-bar {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }}
+  h1 {{ font-size: 26px; font-weight: 700; letter-spacing: -0.4px; }}
+  .count {{ font-size: 12.5px; color: var(--muted); margin-top: 2px; }}
   .add-form {{
-    display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap;
-    background: var(--card); border: 1px solid var(--border); padding: 14px; border-radius: 14px;
+    display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap;
+    background: var(--card); border: 1px solid var(--border); padding: 12px; border-radius: 12px;
   }}
   .add-form input {{
-    flex: 1 1 200px; padding: 9px 12px; border-radius: 8px;
+    flex: 1 1 200px; padding: 8px 12px; border-radius: 8px;
     border: 1px solid var(--border); background: var(--bg); color: var(--fg); font-size: 13.5px; outline: none;
   }}
-  .add-form input:focus {{ border-color: var(--accent); }}
+  .add-form input:focus {{ border-color: var(--border-focus); }}
   .add-form button {{
-    padding: 9px 18px; border-radius: 8px; border: none;
-    background: var(--accent); color: #fff; font-weight: 600; cursor: pointer;
+    padding: 8px 16px; border-radius: 8px; border: none;
+    background: var(--btn-bg); color: var(--btn-fg); font-size: 13px; font-weight: 600; cursor: pointer;
   }}
   .filter-input {{
-    width: 100%; padding: 10px 14px; margin-bottom: 16px; border-radius: 10px;
-    border: 1px solid var(--border); background: var(--card); color: var(--fg); font-size: 14px; outline: none;
+    width: 100%; padding: 10px 14px; margin-bottom: 14px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--card); color: var(--fg); font-size: 13.5px; outline: none;
   }}
-  .filter-input:focus {{ border-color: var(--accent); }}
+  .filter-input:focus {{ border-color: var(--border-focus); }}
   ul {{ list-style: none; }}
   .item {{
-    display: flex; align-items: center; gap: 12px; padding: 14px 18px;
+    display: flex; align-items: center; gap: 12px; padding: 12px 16px;
     background: var(--card); border: 1px solid var(--border);
-    border-radius: 12px; margin-bottom: 8px;
+    border-radius: 10px; margin-bottom: 8px;
   }}
-  .fav {{ color: #ffb800; font-size: 16px; }}
+  .bm-icon {{ color: var(--muted); flex-shrink: 0; }}
   .item .title {{
-    font-weight: 600; color: var(--fg); text-decoration: none;
+    font-weight: 600; font-size: 13.5px; color: var(--fg); text-decoration: none;
     flex: 0 0 auto; max-width: 260px; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap;
   }}
-  .item .title:hover {{ color: var(--accent); text-decoration: underline; }}
+  .item .title:hover {{ text-decoration: underline; }}
   .item .url {{
     color: var(--muted); font-size: 12.5px; flex: 1 1 auto;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }}
   .item .remove {{
-    background: transparent; border: 1px solid var(--border);
-    color: var(--muted); border-radius: 7px; width: 28px; height: 28px;
-    cursor: pointer; font-size: 16px; line-height: 1;
+    background: transparent; border: 1px solid transparent;
+    color: var(--muted); border-radius: 6px; width: 28px; height: 28px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
   }}
-  .item .remove:hover {{ background: #e74c3c; color: #fff; border-color: #e74c3c; }}
+  .item .remove:hover {{ border-color: var(--border-focus); color: var(--fg); }}
   .empty {{
-    color: var(--muted); padding: 36px; text-align: center;
+    color: var(--muted); padding: 36px; text-align: center; font-size: 13.5px;
     background: var(--card); border: 1px solid var(--border);
-    border-radius: 12px; list-style: none;
+    border-radius: 10px; list-style: none;
   }}
 </style>
 </head>
@@ -118,7 +122,7 @@ pub fn render(records: &[(i64, String, String)], lang: &str, dark: bool) -> Stri
     <form id="add-bm-form" class="add-form">
       <input type="text" id="bm-title" placeholder="{title_ph}">
       <input type="text" id="bm-url" placeholder="https://example.com" required>
-      <button type="submit">+ {add_btn}</button>
+      <button type="submit">{add_btn}</button>
     </form>
 
     <input type="text" id="bm-filter" class="filter-input" placeholder="{search_ph}">
