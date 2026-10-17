@@ -1,10 +1,12 @@
-//! Tab widget — 2 button độc lập: thân tab (click để activate) và nút X
-//! (click để close). Không dùng GestureClick để tránh xung đột event.
+//! Tab widget — thân tab (click để activate), nút X SVG (click để close),
+//! và hỗ trợ click chuột giữa (Middle-click) để đóng tab như trình duyệt thật.
 
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use gtk4::{Box as GtkBox, Button, Image, Label, Orientation};
+use gtk4::{Box as GtkBox, Button, EventSequenceState, GestureClick, Image, Label, Orientation};
+
+use crate::chrome::icons;
 
 pub struct TabWidget {
     container: GtkBox,
@@ -19,20 +21,20 @@ impl TabWidget {
         FA: Fn() + 'static,
         FC: Fn() + 'static,
     {
-        // Container ngoài — chỉ để gom body + close.
+        let on_close = Rc::new(on_close);
+
         let container = GtkBox::new(Orientation::Horizontal, 0);
         container.add_css_class("kestrel-tab");
         container.set_hexpand(false);
         container.set_vexpand(false);
 
-        // --- Thân tab: Button chứa favicon + label ---
+        // --- Thân tab: Button chứa SVG favicon + label ---
         let body = Button::new();
         body.add_css_class("kestrel-tab-body");
         body.set_hexpand(true);
         body.set_vexpand(false);
 
-        let favicon = Image::from_icon_name("text-x-generic-symbolic");
-        favicon.set_pixel_size(15);
+        let favicon = icons::svg_image(icons::GLOBE, "web-browser-symbolic", 15);
         favicon.add_css_class("kestrel-tab-favicon");
 
         let label = Label::new(Some(title));
@@ -43,18 +45,37 @@ impl TabWidget {
         label.set_xalign(0.0);
         label.add_css_class("kestrel-tab-label");
 
-        let body_content = GtkBox::new(Orientation::Horizontal, 6);
+        let body_content = GtkBox::new(Orientation::Horizontal, 7);
         body_content.append(&favicon);
         body_content.append(&label);
         body.set_child(Some(&body_content));
         body.connect_clicked(move |_| on_activate());
 
-        // --- Nút X: Button riêng, sibling của body ---
-        let close_button = Button::from_icon_name("window-close-symbolic");
-        close_button.set_tooltip_text(Some("Close tab"));
+        // --- Nút X đóng tab bằng SVG ---
+        let close_button = icons::svg_button(
+            icons::CLOSE,
+            "window-close-symbolic",
+            13,
+            "Close tab (Ctrl+W)",
+        );
         close_button.add_css_class("kestrel-tab-close");
         close_button.set_vexpand(false);
-        close_button.connect_clicked(move |_| on_close());
+        {
+            let on_close_c = on_close.clone();
+            close_button.connect_clicked(move |_| on_close_c());
+        }
+
+        // --- Hỗ trợ Middle-click (nút chuột 2) để đóng tab ---
+        let middle_click = GestureClick::new();
+        middle_click.set_button(2);
+        {
+            let on_close_c = on_close.clone();
+            middle_click.connect_released(move |gesture, _n_press, _x, _y| {
+                gesture.set_state(EventSequenceState::Claimed);
+                on_close_c();
+            });
+        }
+        container.add_controller(middle_click);
 
         container.append(&body);
         container.append(&close_button);
@@ -68,12 +89,35 @@ impl TabWidget {
     }
 
     pub fn set_title(&self, title: &str) {
-        let t = if title.is_empty() { "Untitled" } else { title };
+        let t = if title.trim().is_empty() {
+            "New Tab"
+        } else {
+            title
+        };
         self.label.set_text(t);
+        self.container.set_tooltip_text(Some(t));
+    }
+
+    pub fn set_favicon_svg(&self, svg: &'static str, fallback_icon: &str) {
+        icons::set_image_svg(&self.favicon, svg, fallback_icon, 15);
     }
 
     pub fn set_favicon(&self, icon_name: &str) {
-        self.favicon.set_icon_name(Some(icon_name));
+        if icon_name == "web-browser-symbolic" {
+            self.set_favicon_svg(icons::KESTREL_BADGE, icon_name);
+        } else {
+            self.set_favicon_svg(icons::GLOBE, icon_name);
+        }
+    }
+
+    pub fn set_loading(&self, loading: bool, is_internal: bool) {
+        if loading {
+            self.set_favicon_svg(icons::SPINNER_LOADING, "content-loading-symbolic");
+        } else if is_internal {
+            self.set_favicon_svg(icons::KESTREL_BADGE, "web-browser-symbolic");
+        } else {
+            self.set_favicon_svg(icons::GLOBE, "text-x-generic-symbolic");
+        }
     }
 
     pub fn set_active(&self, active: bool) {
