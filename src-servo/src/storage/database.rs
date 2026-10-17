@@ -69,12 +69,17 @@ impl Database {
                 timestamp: Some(r.get(3)?),
             })
         })?;
-        // Propagate errors thay vì nuốt lỗi.
         let mut out = Vec::new();
         for row in rows {
             out.push(row?);
         }
         Ok(out)
+    }
+
+    pub fn delete_history_item(&self, id: i64) -> rusqlite::Result<()> {
+        let conn = self.conn.lock().expect("Database mutex poisoned");
+        conn.execute("DELETE FROM history WHERE id = ?1", params![id])?;
+        Ok(())
     }
 
     pub fn clear_history(&self) -> rusqlite::Result<()> {
@@ -83,12 +88,34 @@ impl Database {
         Ok(())
     }
 
+    pub fn history_count(&self) -> usize {
+        let conn = self.conn.lock().expect("Database mutex poisoned");
+        conn.query_row("SELECT COUNT(*) FROM history", [], |r| r.get::<_, i64>(0))
+            .unwrap_or(0) as usize
+    }
+
     pub fn insert_bookmark(&self, url: &str, title: &str) -> rusqlite::Result<()> {
         let conn = self.conn.lock().expect("Database mutex poisoned");
         conn.execute(
             "INSERT OR REPLACE INTO bookmarks (url, title) VALUES (?1, ?2)",
             params![url, title],
         )?;
+        Ok(())
+    }
+
+    pub fn is_bookmarked(&self, url: &str) -> bool {
+        let conn = self.conn.lock().expect("Database mutex poisoned");
+        conn.query_row(
+            "SELECT 1 FROM bookmarks WHERE url = ?1 LIMIT 1",
+            params![url],
+            |_| Ok(()),
+        )
+        .is_ok()
+    }
+
+    pub fn remove_bookmark_by_url(&self, url: &str) -> rusqlite::Result<()> {
+        let conn = self.conn.lock().expect("Database mutex poisoned");
+        conn.execute("DELETE FROM bookmarks WHERE url = ?1", params![url])?;
         Ok(())
     }
 
@@ -113,6 +140,18 @@ impl Database {
         let conn = self.conn.lock().expect("Database mutex poisoned");
         conn.execute("DELETE FROM bookmarks WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    pub fn clear_bookmarks(&self) -> rusqlite::Result<()> {
+        let conn = self.conn.lock().expect("Database mutex poisoned");
+        conn.execute("DELETE FROM bookmarks", [])?;
+        Ok(())
+    }
+
+    pub fn bookmark_count(&self) -> usize {
+        let conn = self.conn.lock().expect("Database mutex poisoned");
+        conn.query_row("SELECT COUNT(*) FROM bookmarks", [], |r| r.get::<_, i64>(0))
+            .unwrap_or(0) as usize
     }
 
     pub fn save_config_item(&self, key: &str, val: &str) -> rusqlite::Result<()> {
@@ -178,17 +217,29 @@ mod tests {
     fn test_bookmark_roundtrip() {
         let db = temp_db();
         db.insert_bookmark("https://rust-lang.org", "Rust").unwrap();
+        assert!(db.is_bookmarked("https://rust-lang.org"));
         let rows = db.fetch_bookmarks().unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].url, "https://rust-lang.org");
         db.remove_bookmark(rows[0].id.unwrap()).unwrap();
+        assert!(!db.is_bookmarked("https://rust-lang.org"));
         assert!(db.fetch_bookmarks().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_remove_bookmark_by_url() {
+        let db = temp_db();
+        db.insert_bookmark("https://servo.org", "Servo").unwrap();
+        assert_eq!(db.bookmark_count(), 1);
+        db.remove_bookmark_by_url("https://servo.org").unwrap();
+        assert_eq!(db.bookmark_count(), 0);
     }
 
     #[test]
     fn test_config_item_roundtrip() {
         let db = temp_db();
-        db.save_config_item("homepage", "https://example.com").unwrap();
+        db.save_config_item("homepage", "https://example.com")
+            .unwrap();
         assert_eq!(
             db.load_config_item("homepage"),
             Some("https://example.com".into())
@@ -200,7 +251,8 @@ mod tests {
     fn test_fetch_history_respects_limit() {
         let db = temp_db();
         for i in 0..5 {
-            db.insert_history(&format!("https://example.com/{}", i), "T").unwrap();
+            db.insert_history(&format!("https://example.com/{}", i), "T")
+                .unwrap();
         }
         let rows = db.fetch_history(3).unwrap();
         assert_eq!(rows.len(), 3);
