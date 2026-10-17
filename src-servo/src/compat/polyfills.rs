@@ -1,10 +1,5 @@
-//! Polyfill JavaScript mở rộng cho Servo Engine.
-//!
-//! Nguyên tắc:
-//! - Luôn kiểm tra feature-detection (`typeof ... === 'undefined'`) trước khi định nghĩa,
-//!   tuyệt đối không ghi đè implementation native khi Servo đã hỗ trợ.
-//! - Bổ sung đầy đủ các API ES2021–ES2024 và Web/DOM API phổ biến mà các framework hiện đại
-//!   (React, Vue, Next.js, Svelte, Radix UI, Tailwind) yêu cầu để tránh lỗi màn hình trắng.
+//! Polyfill JavaScript nhẹ và mượt cho Servo Engine.
+//! Không gọi `getBoundingClientRect()` hàng loạt trong Observer để tránh nghẽn IPC Layout.
 
 pub const POLYFILL_SCRIPT: &str = r#"
 (function () {
@@ -32,7 +27,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         });
     }
 
-    // ---- 3. Promise.allSettled() & Promise.any() — ES2020/ES2021 ----
+    // ---- 3. Promise.allSettled() & Promise.any() ----
     if (typeof Promise !== 'undefined' && typeof Promise.allSettled !== 'function') {
         Object.defineProperty(Promise, 'allSettled', {
             value: function (iterable) {
@@ -95,7 +90,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         };
     }
 
-    // ---- 5. Object.hasOwn() (ES2022) & Object.fromEntries() (ES2019) ----
+    // ---- 5. Object.hasOwn() & Object.fromEntries() ----
     if (typeof Object.hasOwn !== 'function') {
         Object.defineProperty(Object, 'hasOwn', {
             value: function (obj, prop) {
@@ -166,7 +161,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         });
     }
 
-    // ---- 7. Array.prototype.at, String.prototype.at, TypedArray.prototype.at — ES2022 ----
+    // ---- 7. Array/String/TypedArray.prototype.at — ES2022 ----
     function atMethod(n) {
         var len = this.length >>> 0;
         var k = Math.trunc(n) || 0;
@@ -185,16 +180,8 @@ pub const POLYFILL_SCRIPT: &str = r#"
             value: atMethod, writable: true, configurable: true
         });
     }
-    if (typeof Uint8Array !== 'undefined') {
-        var typedArrayProto = Object.getPrototypeOf(Uint8Array.prototype);
-        if (typedArrayProto && typeof typedArrayProto.at !== 'function') {
-            Object.defineProperty(typedArrayProto, 'at', {
-                value: atMethod, writable: true, configurable: true
-            });
-        }
-    }
 
-    // ---- 8. Array.prototype.flat & flatMap (ES2019) ----
+    // ---- 8. Array.prototype.flat, flatMap, findLast, findLastIndex ----
     if (typeof Array.prototype.flat !== 'function') {
         Object.defineProperty(Array.prototype, 'flat', {
             value: function (depth) {
@@ -233,7 +220,6 @@ pub const POLYFILL_SCRIPT: &str = r#"
         });
     }
 
-    // ---- 9. Array.prototype.findLast & findLastIndex (ES2023) ----
     if (typeof Array.prototype.findLast !== 'function') {
         Object.defineProperty(Array.prototype, 'findLast', {
             value: function (predicate, thisArg) {
@@ -262,27 +248,19 @@ pub const POLYFILL_SCRIPT: &str = r#"
         });
     }
 
-    // ---- 10. ES2023 Change-Array-by-Copy: toSorted, toReversed, toSpliced, with ----
+    // ---- 9. ES2023 Change-Array-by-Copy: toSorted, toReversed, toSpliced, with ----
     if (typeof Array.prototype.toSorted !== 'function') {
         Object.defineProperty(Array.prototype, 'toSorted', {
-            value: function (compareFn) {
-                return Array.from(this).sort(compareFn);
-            },
-            writable: true,
-            configurable: true
+            value: function (compareFn) { return Array.from(this).sort(compareFn); },
+            writable: true, configurable: true
         });
     }
-
     if (typeof Array.prototype.toReversed !== 'function') {
         Object.defineProperty(Array.prototype, 'toReversed', {
-            value: function () {
-                return Array.from(this).reverse();
-            },
-            writable: true,
-            configurable: true
+            value: function () { return Array.from(this).reverse(); },
+            writable: true, configurable: true
         });
     }
-
     if (typeof Array.prototype.toSpliced !== 'function') {
         Object.defineProperty(Array.prototype, 'toSpliced', {
             value: function () {
@@ -290,11 +268,9 @@ pub const POLYFILL_SCRIPT: &str = r#"
                 Array.prototype.splice.apply(copy, arguments);
                 return copy;
             },
-            writable: true,
-            configurable: true
+            writable: true, configurable: true
         });
     }
-
     if (typeof Array.prototype.with !== 'function') {
         Object.defineProperty(Array.prototype, 'with', {
             value: function (index, value) {
@@ -306,95 +282,11 @@ pub const POLYFILL_SCRIPT: &str = r#"
                 copy[k] = value;
                 return copy;
             },
-            writable: true,
-            configurable: true
+            writable: true, configurable: true
         });
     }
 
-    // ---- 11. ES2024 Set Methods ----
-    if (typeof Set !== 'undefined') {
-        if (typeof Set.prototype.union !== 'function') {
-            Object.defineProperty(Set.prototype, 'union', {
-                value: function (other) {
-                    var res = new Set(this);
-                    for (var v of other) res.add(v);
-                    return res;
-                },
-                writable: true, configurable: true
-            });
-        }
-        if (typeof Set.prototype.intersection !== 'function') {
-            Object.defineProperty(Set.prototype, 'intersection', {
-                value: function (other) {
-                    var res = new Set();
-                    for (var v of other) {
-                        if (this.has(v)) res.add(v);
-                    }
-                    return res;
-                },
-                writable: true, configurable: true
-            });
-        }
-        if (typeof Set.prototype.difference !== 'function') {
-            Object.defineProperty(Set.prototype, 'difference', {
-                value: function (other) {
-                    var res = new Set(this);
-                    for (var v of other) res.delete(v);
-                    return res;
-                },
-                writable: true, configurable: true
-            });
-        }
-        if (typeof Set.prototype.symmetricDifference !== 'function') {
-            Object.defineProperty(Set.prototype, 'symmetricDifference', {
-                value: function (other) {
-                    var res = new Set(this);
-                    for (var v of other) {
-                        if (res.has(v)) res.delete(v);
-                        else res.add(v);
-                    }
-                    return res;
-                },
-                writable: true, configurable: true
-            });
-        }
-        if (typeof Set.prototype.isSubsetOf !== 'function') {
-            Object.defineProperty(Set.prototype, 'isSubsetOf', {
-                value: function (other) {
-                    var otherSet = other instanceof Set ? other : new Set(other);
-                    for (var v of this) {
-                        if (!otherSet.has(v)) return false;
-                    }
-                    return true;
-                },
-                writable: true, configurable: true
-            });
-        }
-        if (typeof Set.prototype.isSupersetOf !== 'function') {
-            Object.defineProperty(Set.prototype, 'isSupersetOf', {
-                value: function (other) {
-                    for (var v of other) {
-                        if (!this.has(v)) return false;
-                    }
-                    return true;
-                },
-                writable: true, configurable: true
-            });
-        }
-        if (typeof Set.prototype.isDisjointFrom !== 'function') {
-            Object.defineProperty(Set.prototype, 'isDisjointFrom', {
-                value: function (other) {
-                    for (var v of other) {
-                        if (this.has(v)) return false;
-                    }
-                    return true;
-                },
-                writable: true, configurable: true
-            });
-        }
-    }
-
-    // ---- 12. String.prototype.replaceAll (ES2021) ----
+    // ---- 10. String.prototype.replaceAll ----
     if (typeof String.prototype.replaceAll !== 'function') {
         Object.defineProperty(String.prototype, 'replaceAll', {
             value: function (search, replacement) {
@@ -406,19 +298,17 @@ pub const POLYFILL_SCRIPT: &str = r#"
                 var escaped = String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                 return str.replace(new RegExp(escaped, 'g'), replacement);
             },
-            writable: true,
-            configurable: true
+            writable: true, configurable: true
         });
     }
 
-    // ---- 13. structuredClone() với hỗ trợ Date, RegExp, Map, Set, ArrayBuffer, TypedArray & Cycles ----
+    // ---- 11. structuredClone() ----
     if (typeof globalThis.structuredClone !== 'function') {
         globalThis.structuredClone = function structuredClone(value) {
             var seen = new WeakMap();
             function clone(val) {
                 if (val === null || typeof val !== 'object') return val;
                 if (seen.has(val)) return seen.get(val);
-
                 if (val instanceof Date) return new Date(val.getTime());
                 if (val instanceof RegExp) return new RegExp(val.source, val.flags);
                 if (val instanceof ArrayBuffer) return val.slice(0);
@@ -458,7 +348,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         };
     }
 
-    // ---- 14. crypto.randomUUID() ----
+    // ---- 12. crypto.randomUUID() & URL.canParse() ----
     if (typeof crypto !== 'undefined' &&
         typeof crypto.randomUUID !== 'function' &&
         typeof crypto.getRandomValues === 'function') {
@@ -474,12 +364,10 @@ pub const POLYFILL_SCRIPT: &str = r#"
                        hex.slice(6, 8).join('') + '-' + hex.slice(8, 10).join('') + '-' +
                        hex.slice(10, 16).join('');
             },
-            writable: true,
-            configurable: true
+            writable: true, configurable: true
         });
     }
 
-    // ---- 15. URL.canParse() — WHATWG URL ----
     if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
         Object.defineProperty(URL, 'canParse', {
             value: function (url, base) {
@@ -491,53 +379,11 @@ pub const POLYFILL_SCRIPT: &str = r#"
                     return false;
                 }
             },
-            writable: true,
-            configurable: true
+            writable: true, configurable: true
         });
     }
 
-    // ---- 16. AbortSignal.timeout() & AbortSignal.any() ----
-    if (typeof AbortSignal !== 'undefined' && typeof AbortController !== 'undefined') {
-        if (typeof AbortSignal.timeout !== 'function') {
-            Object.defineProperty(AbortSignal, 'timeout', {
-                value: function (ms) {
-                    var ctrl = new AbortController();
-                    setTimeout(function () {
-                        var err = typeof DOMException !== 'undefined'
-                            ? new DOMException('Signal timed out', 'TimeoutError')
-                            : new Error('TimeoutError');
-                        ctrl.abort(err);
-                    }, ms);
-                    return ctrl.signal;
-                },
-                writable: true,
-                configurable: true
-            });
-        }
-        if (typeof AbortSignal.any !== 'function') {
-            Object.defineProperty(AbortSignal, 'any', {
-                value: function (signals) {
-                    var ctrl = new AbortController();
-                    for (var sig of signals) {
-                        if (sig && sig.aborted) {
-                            ctrl.abort(sig.reason);
-                            return ctrl.signal;
-                        }
-                        if (sig && typeof sig.addEventListener === 'function') {
-                            sig.addEventListener('abort', function () {
-                                ctrl.abort(sig.reason);
-                            }, { once: true });
-                        }
-                    }
-                    return ctrl.signal;
-                },
-                writable: true,
-                configurable: true
-            });
-        }
-    }
-
-    // ---- 17. requestIdleCallback() / cancelIdleCallback() ----
+    // ---- 13. requestIdleCallback() ----
     if (typeof requestIdleCallback !== 'function') {
         globalThis.requestIdleCallback = function (cb) {
             var start = Date.now();
@@ -553,298 +399,113 @@ pub const POLYFILL_SCRIPT: &str = r#"
         globalThis.cancelIdleCallback = function (handle) { clearTimeout(handle); };
     }
 
-    // ---- 18. ResizeObserver Fallback (Ngăn crash SPA React/Vue/Radix UI) ----
+    // ---- 14. Lightweight Batched ResizeObserver & IntersectionObserver (Không gọi getBoundingClientRect) ----
+    var DEFAULT_RECT = { x: 0, y: 0, width: 100, height: 100, top: 0, left: 0, right: 100, bottom: 100 };
+    var DEFAULT_BOX = [{ inlineSize: 100, blockSize: 100 }];
+
     if (typeof globalThis.ResizeObserver === 'undefined') {
         globalThis.ResizeObserver = function ResizeObserver(callback) {
             this._cb = callback;
-            this._targets = new Set();
-            var self = this;
-            this._onResize = function () { self._notify(); };
+            this._pending = [];
+            this._scheduled = false;
         };
         globalThis.ResizeObserver.prototype.observe = function (target) {
-            if (!target) return;
-            if (this._targets.size === 0 && typeof window !== 'undefined') {
-                window.addEventListener('resize', this._onResize);
+            if (!target || typeof this._cb !== 'function') return;
+            this._pending.push(target);
+            if (!this._scheduled) {
+                this._scheduled = true;
+                var self = this;
+                setTimeout(function () {
+                    self._scheduled = false;
+                    var list = self._pending.splice(0, self._pending.length);
+                    if (list.length === 0) return;
+                    var entries = list.map(function (el) {
+                        return {
+                            target: el,
+                            contentRect: DEFAULT_RECT,
+                            borderBoxSize: DEFAULT_BOX,
+                            contentBoxSize: DEFAULT_BOX,
+                            devicePixelContentBoxSize: DEFAULT_BOX
+                        };
+                    });
+                    try { self._cb(entries, self); } catch (_) {}
+                }, 16);
             }
-            this._targets.add(target);
-            var self = this;
-            setTimeout(function () { self._notifyTarget(target); }, 0);
         };
-        globalThis.ResizeObserver.prototype.unobserve = function (target) {
-            this._targets.delete(target);
-            if (this._targets.size === 0 && typeof window !== 'undefined') {
-                window.removeEventListener('resize', this._onResize);
-            }
-        };
+        globalThis.ResizeObserver.prototype.unobserve = function () {};
         globalThis.ResizeObserver.prototype.disconnect = function () {
-            this._targets.clear();
-            if (typeof window !== 'undefined') {
-                window.removeEventListener('resize', this._onResize);
-            }
-        };
-        globalThis.ResizeObserver.prototype._makeEntry = function (el) {
-            var rect = (el && typeof el.getBoundingClientRect === 'function')
-                ? el.getBoundingClientRect()
-                : { x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 };
-            var box = [{ inlineSize: rect.width || 0, blockSize: rect.height || 0 }];
-            return {
-                target: el,
-                contentRect: rect,
-                borderBoxSize: box,
-                contentBoxSize: box,
-                devicePixelContentBoxSize: box
-            };
-        };
-        globalThis.ResizeObserver.prototype._notifyTarget = function (el) {
-            if (!this._targets.has(el) || typeof this._cb !== 'function') return;
-            try { this._cb([this._makeEntry(el)], this); } catch (_) {}
-        };
-        globalThis.ResizeObserver.prototype._notify = function () {
-            if (this._targets.size === 0 || typeof this._cb !== 'function') return;
-            var entries = [];
-            var self = this;
-            this._targets.forEach(function (el) { entries.push(self._makeEntry(el)); });
-            try { this._cb(entries, this); } catch (_) {}
+            this._pending.length = 0;
         };
     }
 
-    // ---- 19. IntersectionObserver Fallback (Giúp ảnh lazy-load & infinite scroll hiển thị) ----
     if (typeof globalThis.IntersectionObserver === 'undefined') {
         globalThis.IntersectionObserver = function IntersectionObserver(callback, options) {
             this._cb = callback;
-            this._targets = new Set();
+            this._pending = [];
+            this._scheduled = false;
             this.root = (options && options.root) || null;
             this.rootMargin = (options && options.rootMargin) || '0px';
             this.thresholds = [0];
         };
         globalThis.IntersectionObserver.prototype.observe = function (target) {
-            if (!target) return;
-            this._targets.add(target);
-            var self = this;
-            setTimeout(function () {
-                if (!self._targets.has(target) || typeof self._cb !== 'function') return;
-                var rect = typeof target.getBoundingClientRect === 'function'
-                    ? target.getBoundingClientRect()
-                    : { x: 0, y: 0, width: 100, height: 100, top: 0, left: 0, right: 100, bottom: 100 };
-                var entry = {
-                    time: typeof performance !== 'undefined' ? performance.now() : Date.now(),
-                    target: target,
-                    isIntersecting: true,
-                    intersectionRatio: 1,
-                    boundingClientRect: rect,
-                    intersectionRect: rect,
-                    rootBounds: null
-                };
-                try { self._cb([entry], self); } catch (_) {}
-            }, 0);
+            if (!target || typeof this._cb !== 'function') return;
+            this._pending.push(target);
+            if (!this._scheduled) {
+                this._scheduled = true;
+                var self = this;
+                setTimeout(function () {
+                    self._scheduled = false;
+                    var list = self._pending.splice(0, self._pending.length);
+                    if (list.length === 0) return;
+                    var now = Date.now();
+                    var entries = list.map(function (el) {
+                        return {
+                            time: now,
+                            target: el,
+                            isIntersecting: true,
+                            intersectionRatio: 1,
+                            boundingClientRect: DEFAULT_RECT,
+                            intersectionRect: DEFAULT_RECT,
+                            rootBounds: null
+                        };
+                    });
+                    try { self._cb(entries, self); } catch (_) {}
+                }, 16);
+            }
         };
-        globalThis.IntersectionObserver.prototype.unobserve = function (target) {
-            this._targets.delete(target);
-        };
+        globalThis.IntersectionObserver.prototype.unobserve = function () {};
         globalThis.IntersectionObserver.prototype.disconnect = function () {
-            this._targets.clear();
+            this._pending.length = 0;
         };
-        globalThis.IntersectionObserver.prototype.takeRecords = function () {
-            return [];
-        };
+        globalThis.IntersectionObserver.prototype.takeRecords = function () { return []; };
     }
 
-    // ---- 20. PerformanceObserver Fallback (Ngăn crash từ Next.js / Core Web Vitals / Sentry) ----
+    // ---- 15. PerformanceObserver & Element.animate Stub ----
     if (typeof globalThis.PerformanceObserver === 'undefined') {
-        globalThis.PerformanceObserver = function PerformanceObserver(callback) {
-            this._cb = callback;
-        };
+        globalThis.PerformanceObserver = function PerformanceObserver() {};
         globalThis.PerformanceObserver.supportedEntryTypes = [];
         globalThis.PerformanceObserver.prototype.observe = function () {};
         globalThis.PerformanceObserver.prototype.disconnect = function () {};
         globalThis.PerformanceObserver.prototype.takeRecords = function () { return []; };
     }
 
-    // ---- 21. window.visualViewport Fallback (Ngăn crash trên Floating UI / Popper / Radix) ----
-    if (typeof window !== 'undefined' && typeof window.visualViewport === 'undefined') {
-        var vvListeners = {};
-        window.visualViewport = {
-            get width() { return window.innerWidth || 1280; },
-            get height() { return window.innerHeight || 800; },
-            offsetLeft: 0,
-            offsetTop: 0,
-            pageLeft: 0,
-            pageTop: 0,
-            scale: 1,
-            addEventListener: function (type, cb) {
-                if (!vvListeners[type]) vvListeners[type] = [];
-                vvListeners[type].push(cb);
-                if (type === 'resize' || type === 'scroll') {
-                    window.addEventListener(type, cb);
-                }
-            },
-            removeEventListener: function (type, cb) {
-                if (type === 'resize' || type === 'scroll') {
-                    window.removeEventListener(type, cb);
-                }
-            }
-        };
-    }
-
-    // ---- 22. BroadcastChannel Fallback (Ngăn crash trên NextAuth / Supabase / Firebase) ----
-    if (typeof globalThis.BroadcastChannel === 'undefined') {
-        var channels = {};
-        globalThis.BroadcastChannel = function BroadcastChannel(name) {
-            this.name = String(name);
-            this.onmessage = null;
-            this.onmessageerror = null;
-            this._listeners = [];
-            if (!channels[this.name]) channels[this.name] = [];
-            channels[this.name].push(this);
-        };
-        globalThis.BroadcastChannel.prototype.postMessage = function (msg) {
-            var self = this;
-            var list = channels[this.name] || [];
-            setTimeout(function () {
-                list.forEach(function (peer) {
-                    if (peer === self) return;
-                    var evt = { data: msg, target: peer };
-                    if (typeof peer.onmessage === 'function') peer.onmessage(evt);
-                    peer._listeners.forEach(function (fn) { fn(evt); });
-                });
-            }, 0);
-        };
-        globalThis.BroadcastChannel.prototype.addEventListener = function (type, fn) {
-            if (type === 'message' && typeof fn === 'function') this._listeners.push(fn);
-        };
-        globalThis.BroadcastChannel.prototype.removeEventListener = function (type, fn) {
-            if (type === 'message') {
-                this._listeners = this._listeners.filter(function (f) { return f !== fn; });
-            }
-        };
-        globalThis.BroadcastChannel.prototype.close = function () {
-            var self = this;
-            if (channels[this.name]) {
-                channels[this.name] = channels[this.name].filter(function (p) { return p !== self; });
-            }
-        };
-    }
-
-    // ---- 23. window.matchMedia Dual Listener Compatibility ----
-    if (typeof window !== 'undefined') {
-        if (typeof window.matchMedia !== 'function') {
-            window.matchMedia = function (query) {
-                return {
-                    matches: false,
-                    media: String(query),
-                    onchange: null,
-                    addListener: function () {},
-                    removeListener: function () {},
-                    addEventListener: function () {},
-                    removeEventListener: function () {},
-                    dispatchEvent: function () { return false; }
-                };
+    if (typeof Element !== 'undefined' && typeof Element.prototype.animate !== 'function') {
+        Element.prototype.animate = function () {
+            var anim = {
+                playState: 'finished',
+                finished: Promise.resolve(),
+                onfinish: null,
+                cancel: function () {},
+                finish: function () {},
+                pause: function () {},
+                play: function () {},
+                addEventListener: function () {},
+                removeEventListener: function () {}
             };
-        } else {
-            var origMatchMedia = window.matchMedia.bind(window);
-            window.matchMedia = function (query) {
-                var mql = origMatchMedia(query);
-                if (mql) {
-                    if (typeof mql.addEventListener !== 'function' && typeof mql.addListener === 'function') {
-                        mql.addEventListener = function (type, listener) {
-                            if (type === 'change') mql.addListener(listener);
-                        };
-                        mql.removeEventListener = function (type, listener) {
-                            if (type === 'change') mql.removeListener(listener);
-                        };
-                    }
-                    if (typeof mql.addListener !== 'function' && typeof mql.addEventListener === 'function') {
-                        mql.addListener = function (listener) { mql.addEventListener('change', listener); };
-                        mql.removeListener = function (listener) { mql.removeEventListener('change', listener); };
-                    }
-                }
-                return mql;
-            };
-        }
-    }
-
-    // ---- 24. Element.prototype.animate / getAnimations / checkVisibility ----
-    if (typeof Element !== 'undefined') {
-        if (typeof Element.prototype.animate !== 'function') {
-            Element.prototype.animate = function () {
-                var anim = {
-                    playState: 'finished',
-                    finished: Promise.resolve(),
-                    onfinish: null,
-                    oncancel: null,
-                    cancel: function () {},
-                    finish: function () {},
-                    pause: function () {},
-                    play: function () {},
-                    reverse: function () {},
-                    addEventListener: function (type, fn) {
-                        if (type === 'finish' && typeof fn === 'function') setTimeout(fn, 0);
-                    },
-                    removeEventListener: function () {}
-                };
-                setTimeout(function () {
-                    if (typeof anim.onfinish === 'function') anim.onfinish();
-                }, 0);
-                return anim;
-            };
-        }
-        if (typeof Element.prototype.getAnimations !== 'function') {
-            Element.prototype.getAnimations = function () { return []; };
-        }
-        if (typeof Element.prototype.checkVisibility !== 'function') {
-            Element.prototype.checkVisibility = function () {
-                if (!this.isConnected) return false;
-                var style = typeof getComputedStyle === 'function' ? getComputedStyle(this) : null;
-                if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
-                return true;
-            };
-        }
-        if (typeof Element.prototype.scrollIntoViewIfNeeded !== 'function') {
-            Element.prototype.scrollIntoViewIfNeeded = function () {
-                if (typeof this.scrollIntoView === 'function') this.scrollIntoView();
-            };
-        }
-    }
-
-    // ---- 25. CSS.supports() & CSS.escape() ----
-    if (typeof globalThis.CSS === 'undefined') {
-        globalThis.CSS = {};
-    }
-    if (typeof globalThis.CSS.supports !== 'function') {
-        globalThis.CSS.supports = function () { return true; };
-    }
-    if (typeof globalThis.CSS.escape !== 'function') {
-        globalThis.CSS.escape = function (value) {
-            return String(value).replace(/([^\w-])/g, '\\$1');
+            return anim;
         };
     }
 
-    // ---- 26. navigator.clipboard & sendBeacon ----
-    if (typeof navigator !== 'undefined') {
-        if (!navigator.clipboard) {
-            var clipText = '';
-            try {
-                Object.defineProperty(navigator, 'clipboard', {
-                    value: {
-                        writeText: function (text) {
-                            clipText = String(text);
-                            return Promise.resolve();
-                        },
-                        readText: function () {
-                            return Promise.resolve(clipText);
-                        }
-                    },
-                    configurable: true
-                });
-            } catch (_) {}
-        }
-        if (typeof navigator.sendBeacon !== 'function') {
-            try {
-                navigator.sendBeacon = function () { return true; };
-            } catch (_) {}
-        }
-    }
-
-    console.log('[Kestrel] Web compatibility polyfills v3 loaded');
+    console.log('[Kestrel] polyfills loaded');
 })();
 "#;
