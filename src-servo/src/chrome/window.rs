@@ -26,38 +26,41 @@ const ABOUT_HTML: &str = r#"<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><title>About Kestrel</title>
 <style>
-  :root { --bg:#0f111a; --fg:#f2f4fa; --muted:#9499ad; --accent:#ff622d; --card:#181b26; --border:#272b3d; }
+  :root { --bg:#101116; --fg:#e6e8f0; --muted:#8a8f9e; --card:#171921; --border:#252834; }
   @media (prefers-color-scheme: light) {
-    :root { --bg:#f7f8fa; --fg:#181a20; --muted:#5e6478; --card:#ffffff; --border:#dcdfe8; }
+    :root { --bg:#f5f6f8; --fg:#16181f; --muted:#606575; --card:#ffffff; --border:#dfe2ea; }
   }
   * { box-sizing:border-box; margin:0; padding:0; }
-  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
          background:var(--bg); color:var(--fg); padding:56px 24px;
-         max-width:680px; margin:0 auto; line-height:1.65; }
-  .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:32px; }
-  h1 { font-size:36px; font-weight:800; letter-spacing:-1px; margin-bottom:4px; }
-  h1 span { color:var(--accent); }
-  p { margin:12px 0; }
-  .muted { color:var(--muted); font-size:14px; }
-  a { color:var(--accent); text-decoration:none; font-weight:600; }
-  a:hover { text-decoration:underline; }
-  hr { border:none; border-top:1px solid var(--border); margin:28px 0; }
-  .badge { display:inline-block; background:rgba(255,98,45,0.15); color:var(--accent);
-           padding:3px 10px; border-radius:12px; font-size:12px; font-weight:700; }
+         max-width:660px; margin:0 auto; line-height:1.65; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:32px; }
+  .brand { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+  h1 { font-size:30px; font-weight:700; letter-spacing:-0.8px; }
+  p { margin:12px 0; font-size:14px; }
+  a { color:var(--fg); text-decoration:underline; }
+  hr { border:none; border-top:1px solid var(--border); margin:24px 0; }
+  .badge { display:inline-block; background:var(--bg); border:1px solid var(--border);
+           color:var(--muted); padding:3px 10px; border-radius:8px; font-size:12px; font-weight:500; }
 </style></head>
 <body>
   <div class="card">
-    <h1>Kestrel<span>.</span></h1>
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="12 2 19 21 12 17 5 21 12 2"/>
+      </svg>
+      <h1>Kestrel</h1>
+    </div>
     <p><span class="badge">v1.0.0-alpha · Servo Engine</span></p>
     <p>A lightweight, pure-Rust, zero-telemetry web browser for Linux,
-       built on the <a href="https://servo.org">Servo engine</a> with native GTK4 UI and Brave-powered network ad blocking.</p>
+       built on the <a href="https://servo.org">Servo engine</a> with native GTK4 UI and network-level ad blocking.</p>
     <p><strong>License:</strong> GNU General Public License v3.0</p>
     <p><strong>Repository:</strong>
        <a href="https://github.com/LocShadowVN/kestrel-browser">github.com/LocShadowVN/kestrel-browser</a></p>
     <hr>
-    <h2 style="font-size:20px;margin-bottom:8px;">Tiếng Việt</h2>
+    <h2 style="font-size:18px;margin-bottom:8px;">Tiếng Việt</h2>
     <p>Trình duyệt web nhẹ, thuần Rust, không telemetry dành cho Linux,
-       xây dựng trên <a href="https://servo.org">Servo engine</a> cùng bộ chặn quảng cáo tầng mạng từ Brave.</p>
+       xây dựng trên <a href="https://servo.org">Servo engine</a> cùng bộ chặn quảng cáo tầng mạng.</p>
     <p><strong>Giấy phép:</strong> GNU General Public License v3.0</p>
   </div>
 </body></html>"#;
