@@ -1,5 +1,4 @@
-//! Global CSS cho Kestrel — Thiết kế hiện đại lấy cảm hứng từ Brave Browser.
-//! Hỗ trợ cả Dark Theme (mặc định) và Light Theme (`.theme-light`).
+//! Global CSS cho Kestrel — Tông màu trung tính, đơn sắc, tối giản kiểu Brave.
 
 use gtk4::prelude::*;
 
@@ -8,22 +7,22 @@ const CSS: &str = r#"
    WINDOW & THEME PALETTE
    ============================================================ */
 window.kestrel-window {
-    background-color: #0b0c10;
-    color: #eceef4;
+    background-color: #0e0f14;
+    color: #e4e6ef;
 }
 
 window.kestrel-window.theme-light {
-    background-color: #e8eaef;
+    background-color: #e9ebf0;
     color: #181a20;
 }
 
 /* ============================================================
-   TAB STRIP — Thanh tab hiện đại kiểu Brave
+   TAB STRIP
    ============================================================ */
 .kestrel-tab-strip {
-    background: linear-gradient(180deg, #0b0c10 0%, #101218 100%);
+    background: #0e0f14;
     padding: 6px 8px 4px 8px;
-    min-height: 40px;
+    min-height: 38px;
     border-bottom: 1px solid #1b1d26;
 }
 window.theme-light .kestrel-tab-strip {
@@ -40,45 +39,41 @@ window.theme-light .kestrel-tab-strip {
     min-height: 32px;
 }
 
-/* Mỗi tab: floating pill bo tròn 9px kiểu Brave mới */
 .kestrel-tab {
-    background: rgba(255, 255, 255, 0.03);
+    background: transparent;
     border: 1px solid transparent;
-    border-radius: 9px;
+    border-radius: 8px;
     min-height: 32px;
     min-width: 136px;
     max-width: 220px;
     margin: 0 2px;
-    color: #9499ad;
+    color: #8c90a4;
     transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 .kestrel-tab:hover {
-    background: rgba(255, 255, 255, 0.075);
-    color: #d8dae6;
+    background: rgba(255, 255, 255, 0.05);
+    color: #d4d6e0;
 }
 .kestrel-tab.active {
-    background: #1c1e28;
-    color: #ffffff;
-    border-color: #2d3142;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35), inset 0 -2px 0 0 #ff622d;
+    background: #1b1d26;
+    color: #f2f4fa;
+    border-color: #2a2d3a;
 }
 
 window.theme-light .kestrel-tab {
-    background: rgba(0, 0, 0, 0.04);
+    background: transparent;
     color: #525866;
 }
 window.theme-light .kestrel-tab:hover {
-    background: rgba(0, 0, 0, 0.08);
+    background: rgba(0, 0, 0, 0.06);
     color: #1e2028;
 }
 window.theme-light .kestrel-tab.active {
     background: #ffffff;
     color: #111318;
     border-color: #c9ced8;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08), inset 0 -2px 0 0 #ff622d;
 }
 
-/* Thân tab: Button trong suốt */
 .kestrel-tab-body {
     background: transparent;
     background-image: none;
@@ -99,7 +94,7 @@ window.theme-light .kestrel-tab.active {
 }
 
 .kestrel-tab-favicon {
-    opacity: 0.85;
+    opacity: 0.78;
 }
 .kestrel-tab.active .kestrel-tab-favicon {
     opacity: 1;
@@ -110,7 +105,6 @@ window.theme-light .kestrel-tab.active {
     color: inherit;
 }
 
-/* Nút X đóng tab */
 .kestrel-tab-close {
     background: transparent;
     background-image: none;
@@ -127,16 +121,15 @@ window.theme-light .kestrel-tab.active {
 }
 .kestrel-tab:hover .kestrel-tab-close,
 .kestrel-tab.active .kestrel-tab-close {
-    opacity: 0.8;
+    opacity: 0.75;
 }
 .kestrel-tab-close:hover {
-    background: rgba(255, 90, 90, 0.22);
+    background: rgba(255, 255, 255, 0.10);
     opacity: 1;
 }
 
-/* Nút + thêm tab */
 .kestrel-new-tab-button {
-    background: rgba(255, 255, 255, 0.04);
+    background: transparent;
     background-image: none;
     border: 1px solid transparent;
     box-shadow: none;
@@ -144,29 +137,24 @@ window.theme-light .kestrel-tab.active {
     min-width: 32px;
     min-height: 32px;
     padding: 0;
-    margin: 0 2px 0 6px;
-    color: #c5c8d6;
-    transition: background 100ms ease, border-color 100ms ease;
+    margin: 0 2px 0 4px;
+    color: #c8cad4;
+    transition: background 100ms ease;
 }
 .kestrel-new-tab-button:hover {
-    background: #232634;
-    border-color: #32364a;
-}
-window.theme-light .kestrel-new-tab-button {
-    background: rgba(0, 0, 0, 0.05);
+    background: rgba(255, 255, 255, 0.07);
 }
 window.theme-light .kestrel-new-tab-button:hover {
-    background: #ffffff;
-    border-color: #c5cad4;
+    background: rgba(0, 0, 0, 0.07);
 }
 
 /* ============================================================
-   TOOLBAR — Thanh điều hướng & địa chỉ
+   TOOLBAR
    ============================================================ */
 .kestrel-toolbar {
-    background: #161821;
+    background: #161820;
     padding: 6px 10px;
-    border-bottom: 1px solid #222533;
+    border-bottom: 1px solid #222532;
     min-height: 46px;
 }
 window.theme-light .kestrel-toolbar {
@@ -174,7 +162,6 @@ window.theme-light .kestrel-toolbar {
     border-bottom: 1px solid #d8dce6;
 }
 
-/* Nút toolbar: 34x34, bo góc 8px */
 .kestrel-toolbar-button {
     background: transparent;
     background-image: none;
@@ -185,26 +172,23 @@ window.theme-light .kestrel-toolbar {
     min-height: 34px;
     padding: 0 6px;
     margin: 0 1px;
-    color: #d8dae6;
-    transition: background 100ms ease, border-color 100ms ease;
+    color: #d4d6e0;
+    transition: background 100ms ease;
 }
 .kestrel-toolbar-button:hover {
-    background: #252836;
-    border-color: #32364a;
+    background: rgba(255, 255, 255, 0.07);
 }
 .kestrel-toolbar-button:active,
 .kestrel-toolbar-button:checked {
-    background: #2d3142;
+    background: rgba(255, 255, 255, 0.11);
 }
 .kestrel-toolbar-button:disabled {
-    opacity: 0.38;
+    opacity: 0.35;
 }
 window.theme-light .kestrel-toolbar-button:hover {
-    background: #e4e7ee;
-    border-color: #cfd4df;
+    background: rgba(0, 0, 0, 0.06);
 }
 
-/* Ẩn arrow mặc định của MenuButton */
 .kestrel-toolbar-button > arrow,
 .kestrel-shield-button > arrow {
     -gtk-icon-source: none;
@@ -214,52 +198,60 @@ window.theme-light .kestrel-toolbar-button:hover {
     margin: 0;
 }
 
-/* Nút Shields có badge số lượng quảng cáo đã chặn */
+/* Nút Shields đơn sắc tinh tế */
 .kestrel-shield-button {
-    background: rgba(255, 98, 45, 0.10);
+    background: rgba(255, 255, 255, 0.05);
     background-image: none;
-    border: 1px solid rgba(255, 98, 45, 0.25);
+    border: 1px solid #2b2e3d;
     box-shadow: none;
-    border-radius: 18px;
+    border-radius: 17px;
     min-height: 32px;
     padding: 0 10px;
     margin: 0 3px;
     transition: background 120ms ease, border-color 120ms ease;
 }
 .kestrel-shield-button:hover {
-    background: rgba(255, 98, 45, 0.18);
-    border-color: rgba(255, 98, 45, 0.45);
+    background: rgba(255, 255, 255, 0.09);
+    border-color: #3a3e52;
 }
 .kestrel-shield-button.shield-off {
-    background: rgba(255, 255, 255, 0.04);
-    border-color: rgba(255, 255, 255, 0.08);
+    background: transparent;
+    border-color: transparent;
+    opacity: 0.65;
 }
 .kestrel-shield-count {
     font-size: 11.5px;
-    font-weight: 700;
-    color: #ff7a4d;
+    font-weight: 600;
+    color: #d4d6e0;
     margin-left: 4px;
 }
 .kestrel-shield-button.shield-off .kestrel-shield-count {
-    color: #7c8094;
+    color: #767a8c;
+}
+window.theme-light .kestrel-shield-button {
+    background: rgba(0, 0, 0, 0.05);
+    border-color: #cfd4df;
+}
+window.theme-light .kestrel-shield-count {
+    color: #222530;
 }
 
 /* ============================================================
-   COMPOSITE OMNIBOX — Pill shape tích hợp khóa HTTPS + Star
+   COMPOSITE OMNIBOX
    ============================================================ */
 .kestrel-omnibox-box {
-    background: #0e1017;
-    border: 1px solid #282c3e;
-    border-radius: 20px;
+    background: #0f1117;
+    border: 1px solid #262936;
+    border-radius: 19px;
     padding: 2px 6px 2px 10px;
     min-height: 34px;
     margin: 0 8px;
     transition: background 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
 }
 .kestrel-omnibox-box:focus-within {
-    background: #12151f;
-    border-color: #ff622d;
-    box-shadow: 0 0 0 2px rgba(255, 98, 45, 0.20);
+    background: #12141c;
+    border-color: #525870;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.06);
 }
 window.theme-light .kestrel-omnibox-box {
     background: #ffffff;
@@ -267,32 +259,32 @@ window.theme-light .kestrel-omnibox-box {
 }
 window.theme-light .kestrel-omnibox-box:focus-within {
     background: #ffffff;
-    border-color: #ff622d;
+    border-color: #7a8094;
 }
 
 .kestrel-omnibox-security {
     padding: 0 6px 0 2px;
-    opacity: 0.92;
+    opacity: 0.85;
 }
 
 .kestrel-omnibox-scheme-badge {
     font-size: 11px;
-    font-weight: 600;
-    color: #8e93a6;
+    font-weight: 500;
+    color: #8c90a4;
     padding-right: 4px;
 }
 
 .kestrel-omnibox-entry {
     background: transparent;
     background-image: none;
-    color: #f2f4fa;
+    color: #eceef5;
     border: none;
     box-shadow: none;
     outline: none;
     padding: 4px 6px;
     min-height: 24px;
     font-size: 13.5px;
-    caret-color: #ff622d;
+    caret-color: #e4e6ef;
 }
 .kestrel-omnibox-entry:focus {
     background: transparent;
@@ -300,11 +292,12 @@ window.theme-light .kestrel-omnibox-box:focus-within {
     box-shadow: none;
 }
 .kestrel-omnibox-entry selection {
-    background: #ff622d;
+    background: #3b4054;
     color: #ffffff;
 }
 window.theme-light .kestrel-omnibox-entry {
     color: #151820;
+    caret-color: #151820;
 }
 
 .kestrel-omnibox-star {
@@ -319,7 +312,7 @@ window.theme-light .kestrel-omnibox-entry {
     margin-left: 2px;
 }
 .kestrel-omnibox-star:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.07);
 }
 
 /* ============================================================
@@ -333,13 +326,13 @@ progressbar.kestrel-progress {
 }
 progressbar.kestrel-progress trough {
     min-height: 2px;
-    background: rgba(255, 98, 45, 0.12);
+    background: transparent;
     border: none;
     border-radius: 0;
 }
 progressbar.kestrel-progress progress {
     min-height: 2px;
-    background: linear-gradient(90deg, #ff622d 0%, #5e9eff 100%);
+    background: #c8cad4;
     border: none;
     border-radius: 0;
 }
@@ -348,54 +341,54 @@ progressbar.kestrel-progress progress {
    CONTENT AREA
    ============================================================ */
 notebook.kestrel-content {
-    background: #12131a;
+    background: #111319;
     border: none;
 }
 
 /* ============================================================
-   MENU POPOVER — Hamburger + Kestrel Shields Popover
+   MENU POPOVER
    ============================================================ */
 popover > contents {
-    background: #1a1d28;
-    border-radius: 14px;
+    background: #181a22;
+    border-radius: 12px;
     padding: 6px;
-    border: 1px solid #2d3246;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+    border: 1px solid #2a2d3c;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
 }
 window.theme-light popover > contents {
     background: #ffffff;
     border: 1px solid #d4d8e2;
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
 }
 
 .kestrel-menu {
     background: transparent;
     padding: 4px;
-    min-width: 230px;
+    min-width: 225px;
 }
 
 .kestrel-shield-popover {
-    min-width: 280px;
+    min-width: 270px;
     padding: 6px;
 }
 
 .kestrel-shield-header {
-    background: rgba(255, 98, 45, 0.09);
-    border: 1px solid rgba(255, 98, 45, 0.22);
-    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid #282b3a;
+    border-radius: 9px;
     padding: 10px 12px;
     margin-bottom: 8px;
 }
 
 .kestrel-shield-stat-num {
-    font-size: 20px;
-    font-weight: 800;
-    color: #ff7a4d;
+    font-size: 18px;
+    font-weight: 700;
+    color: #f2f4fa;
 }
 
 .kestrel-shield-stat-label {
     font-size: 11.5px;
-    color: #9ea3b8;
+    color: #8c90a4;
 }
 
 .kestrel-menu-item {
@@ -403,21 +396,21 @@ window.theme-light popover > contents {
     background-image: none;
     border: 1px solid transparent;
     box-shadow: none;
-    border-radius: 8px;
+    border-radius: 7px;
     padding: 8px 12px;
-    color: #e4e6f0;
+    color: #dfe1eb;
     font-size: 13px;
     font-weight: 500;
     transition: background 100ms ease, color 100ms ease;
 }
 .kestrel-menu-item:hover {
-    background: #262a3a;
+    background: rgba(255, 255, 255, 0.07);
     color: #ffffff;
 }
 .kestrel-menu-item:checked {
-    background: rgba(255, 98, 45, 0.16);
-    border-color: rgba(255, 98, 45, 0.45);
-    color: #ff855c;
+    background: rgba(255, 255, 255, 0.10);
+    border-color: #3a3e52;
+    color: #ffffff;
 }
 window.theme-light .kestrel-menu-item {
     color: #1d202a;
@@ -435,9 +428,9 @@ window.theme-light .kestrel-menu-item:hover {
 
 .kestrel-menu-title {
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 1.1px;
+    letter-spacing: 1px;
     color: #858a9e;
     padding: 6px 12px 4px 12px;
 }
@@ -449,7 +442,7 @@ window.theme-light .kestrel-menu-item:hover {
 }
 
 .kestrel-menu-separator {
-    background: #2b2f42;
+    background: #282b3a;
     min-height: 1px;
     margin: 5px 8px;
 }
