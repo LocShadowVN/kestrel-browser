@@ -1,23 +1,27 @@
-//! TabBar — tách tab strip (HBox) khỏi content (Notebook ẩn header) để
-//! cho phép đặt toolbar giữa tab strip và content (giống Brave).
+//! TabBar — Quản lý các tab bằng `tab_id: u64` duy nhất và tra cứu động `notebook.page_num`
+//! để loại bỏ hoàn toàn lỗi lệch chỉ mục khi đóng tab ở giữa.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use gtk4::{Box as GtkBox, Button, Notebook, Orientation, Widget};
+use gtk4::{Box as GtkBox, Button, Notebook, Orientation, PolicyType, ScrolledWindow, Widget};
 
+use crate::chrome::icons;
 use crate::chrome::tab_widget::TabWidget;
 
 struct TabMeta {
+    tab_id: u64,
     widget: Rc<TabWidget>,
-    page_num: u32,
+    content: Widget,
 }
 
 pub struct TabBar {
     strip: GtkBox,
+    tabs_area: GtkBox,
     notebook: Notebook,
-    tabs: RefCell<Vec<Rc<TabMeta>>>,
+    tabs: Rc<RefCell<Vec<Rc<TabMeta>>>>,
+    next_id: Cell<u64>,
     new_tab_button: Button,
 }
 
@@ -33,12 +37,21 @@ impl TabBar {
         tabs_area.set_hexpand(true);
         tabs_area.set_vexpand(false);
 
-        let new_tab_button = Button::from_icon_name("tab-new-symbolic");
-        new_tab_button.set_tooltip_text(Some("New tab"));
+        let scroll = ScrolledWindow::builder()
+            .hscrollbar_policy(PolicyType::Automatic)
+            .vscrollbar_policy(PolicyType::Never)
+            .hexpand(true)
+            .vexpand(false)
+            .build();
+        scroll.add_css_class("kestrel-tabs-scroll");
+        scroll.set_child(Some(&tabs_area));
+
+        let new_tab_button =
+            icons::svg_button(icons::PLUS, "tab-new-symbolic", 16, "New Tab (Ctrl+T)");
         new_tab_button.add_css_class("kestrel-new-tab-button");
         new_tab_button.set_vexpand(false);
 
-        strip.append(&tabs_area);
+        strip.append(&scroll);
         strip.append(&new_tab_button);
 
         let notebook = Notebook::new();
@@ -50,86 +63,120 @@ impl TabBar {
 
         Self {
             strip,
+            tabs_area,
             notebook,
-            tabs: RefCell::new(Vec::new()),
+            tabs: Rc::new(RefCell::new(Vec::new())),
+            next_id: Cell::new(1),
             new_tab_button,
         }
     }
 
-    pub fn add_tab<W, FC>(&self, content: &W, title: &str, on_close: FC) -> u32
+    /// Thêm tab mới và trả về `tab_id` duy nhất (không bị đổi khi đóng các tab trước đó).
+    pub fn add_tab<W, FC>(&self, content: &W, title: &str, on_close: FC) -> u64
     where
         W: IsA<Widget>,
-        FC: Fn() + 'static,
+        FC: Fn(u64) + 'static,
     {
-        let page_num_holder: Rc<std::cell::Cell<u32>> =
-            Rc::new(std::cell::Cell::new(0));
+        let tab_id = self.next_id.get();
+        self.next_id.set(tab_id + 1);
+
+        let content_widget: Widget = content.clone().upcast();
 
         let tab = {
             let notebook_c = self.notebook.clone();
-            let holder_c = page_num_holder.clone();
+            let content_c = content_widget.clone();
             TabWidget::new(
                 title,
                 move || {
-                    let pn = holder_c.get();
-                    notebook_c.set_current_page(Some(pn));
+                    if let Some(pn) = notebook_c.page_num(&content_c) {
+                        notebook_c.set_current_page(Some(pn));
+                    }
                 },
-                on_close,
+                move || {
+                    on_close(tab_id);
+                },
             )
         };
 
-        let page_num = self.notebook.append_page(content, None::<&gtk4::Widget>);
-        page_num_holder.set(page_num);
-
-        if let Some(tabs_area) = self.strip.first_child().and_downcast::<GtkBox>() {
-            tabs_area.append(tab.widget());
-        }
+        let page_num = self.notebook.append_page(&content_widget, None::<&Widget>);
+        self.tabs_area.append(tab.widget());
 
         self.tabs.borrow_mut().push(Rc::new(TabMeta {
+            tab_id,
             widget: tab,
-            page_num,
+            content: content_widget,
         }));
 
         self.notebook.set_current_page(Some(page_num));
         self.update_active_classes();
-        page_num
+        tab_id
     }
 
-    pub fn close_tab(&self, page_num: u32) {
-        let removed_widget = self
+    pub fn close_tab(&self, tab_id: u64) {
+        let meta = self
             .tabs
             .borrow()
             .iter()
-            .find(|t| t.page_num == page_num)
-            .map(|t| t.widget.clone());
+            .find(|t| t.tab_id == tab_id)
+            .cloned();
 
-        if let Some(w) = &removed_widget {
-            if let Some(parent) = w.widget().parent().and_downcast::<GtkBox>() {
-                parent.remove(w.widget());
+        if let Some(m) = meta {
+            self.tabs_area.remove(m.widget.widget());
+            if let Some(pn) = self.notebook.page_num(&m.content) {
+                self.notebook.remove_page(Some(pn));
             }
+            self.tabs.borrow_mut().retain(|t| t.tab_id != tab_id);
+            self.update_active_classes();
         }
-
-        if self.notebook.nth_page(Some(page_num)).is_some() {
-            self.notebook.remove_page(Some(page_num));
-        }
-        self.tabs.borrow_mut().retain(|t| t.page_num != page_num);
-        self.update_active_classes();
     }
 
-    pub fn set_tab_title(&self, page_num: u32, title: &str) {
-        if let Some(meta) = self.tabs.borrow().iter().find(|t| t.page_num == page_num) {
+    pub fn set_tab_title(&self, tab_id: u64, title: &str) {
+        if let Some(meta) = self.tabs.borrow().iter().find(|t| t.tab_id == tab_id) {
             meta.widget.set_title(title);
         }
     }
 
-    pub fn set_tab_favicon(&self, page_num: u32, icon_name: &str) {
-        if let Some(meta) = self.tabs.borrow().iter().find(|t| t.page_num == page_num) {
+    pub fn set_tab_favicon(&self, tab_id: u64, icon_name: &str) {
+        if let Some(meta) = self.tabs.borrow().iter().find(|t| t.tab_id == tab_id) {
             meta.widget.set_favicon(icon_name);
         }
     }
 
+    pub fn set_tab_loading(&self, tab_id: u64, loading: bool, is_internal: bool) {
+        if let Some(meta) = self.tabs.borrow().iter().find(|t| t.tab_id == tab_id) {
+            meta.widget.set_loading(loading, is_internal);
+        }
+    }
+
+    pub fn set_active_by_id(&self, tab_id: u64) {
+        let page_num = self
+            .tabs
+            .borrow()
+            .iter()
+            .find(|t| t.tab_id == tab_id)
+            .and_then(|m| self.notebook.page_num(&m.content));
+
+        if let Some(pn) = page_num {
+            self.notebook.set_current_page(Some(pn));
+            self.update_active_classes();
+        }
+    }
+
     pub fn set_active(&self, index: usize) {
-        self.notebook.set_current_page(Some(index as u32));
-        self.update_active_classes();
+        if index < self.count() {
+            self.notebook.set_current_page(Some(index as u32));
+            self.update_active_classes();
+        }
+    }
+
+    pub fn active_tab_id(&self) -> Option<u64> {
+        let current = self.notebook.current_page()?;
+        let page_widget = self.notebook.nth_page(Some(current))?;
+        self.tabs
+            .borrow()
+            .iter()
+            .find(|m| m.content == page_widget)
+            .map(|m| m.tab_id)
     }
 
     pub fn active_index(&self) -> usize {
@@ -141,21 +188,37 @@ impl TabBar {
     }
 
     fn update_active_classes(&self) {
-        let current = self.notebook.current_page();
+        let current_widget = self
+            .notebook
+            .current_page()
+            .and_then(|pn| self.notebook.nth_page(Some(pn)));
+
         for meta in self.tabs.borrow().iter() {
-            meta.widget.set_active(Some(meta.page_num) == current);
+            let is_active = current_widget
+                .as_ref()
+                .map(|w| *w == meta.content)
+                .unwrap_or(false);
+            meta.widget.set_active(is_active);
         }
     }
 
-    pub fn on_switch<F: Fn(u32) + 'static>(&self, cb: F) {
+    /// Gọi callback với `tab_id` của tab vừa được chọn.
+    pub fn on_switch<F: Fn(u64) + 'static>(&self, cb: F) {
         let tabs_c = self.tabs.clone();
-        self.notebook.connect_switch_page(move |_, _, page_num| {
-            let current = Some(page_num);
-            for meta in tabs_c.borrow().iter() {
-                meta.widget.set_active(Some(meta.page_num) == current);
-            }
-            cb(page_num);
-        });
+        self.notebook
+            .connect_switch_page(move |_notebook, page_widget, _page_num| {
+                let mut switched_id = None;
+                for meta in tabs_c.borrow().iter() {
+                    let is_active = meta.content == *page_widget;
+                    meta.widget.set_active(is_active);
+                    if is_active {
+                        switched_id = Some(meta.tab_id);
+                    }
+                }
+                if let Some(id) = switched_id {
+                    cb(id);
+                }
+            });
     }
 
     pub fn on_new_tab<F: Fn() + 'static>(&self, cb: F) {
