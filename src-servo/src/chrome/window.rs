@@ -1,5 +1,5 @@
 //! MainWindow — layout: tab strip → toolbar → content.
-//! Quản lý vòng đời tab theo `tab_id`, đồng bộ trạng thái Omnibox/Bookmark/Shields và hỗ trợ phím tắt.
+//! Sửa lỗi `connect_uri_notify` tự xóa `blocked_count` khi redirect dấu `/` hoặc `www.`.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -103,8 +103,12 @@ impl MainWindow {
                 if let Err(e) = config_c.set_adblock_level(level) {
                     log::warn!("Failed to save adblock level: {e}");
                 }
+                let blob = crate::adblock_rules::get_blob();
                 for tab in tabs_c.borrow().iter() {
                     tab.webview.set_adblock_level(level as i32);
+                    if level > 0 && !blob.is_empty() {
+                        tab.webview.set_adblock_blob(blob.to_vec());
+                    }
                 }
             }
         }));
@@ -134,7 +138,7 @@ impl MainWindow {
             });
         }
 
-        // ---- Toolbar: Reload (hỗ trợ cả trang nội bộ kestrel://) ----
+        // ---- Toolbar: Reload ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab_id.clone();
@@ -143,10 +147,13 @@ impl MainWindow {
             let toolbar_c = toolbar.clone();
             let tabbar_c = tabbar.clone();
             let window_c = window.clone();
+            let total_c = total_blocked.clone();
             toolbar.on_reload(move || {
                 let id = active_c.get();
                 if let Some(tab) = tabs_c.borrow().iter().find(|t| t.tab_id == id) {
                     let current_url = tab.logical_url.borrow().clone();
+                    tab.blocked_count.set(0);
+                    toolbar_c.adblock().set_blocked_count(0, total_c.get());
                     if internal_pages::is_internal(&current_url) || current_url == "kestrel://about"
                     {
                         navigate_tab(
@@ -157,6 +164,7 @@ impl MainWindow {
                             &toolbar_c,
                             &tabbar_c,
                             &window_c,
+                            &total_c,
                             true,
                         );
                     } else {
@@ -175,6 +183,7 @@ impl MainWindow {
             let toolbar_c = toolbar.clone();
             let tabbar_c = tabbar.clone();
             let window_c = window.clone();
+            let total_c = total_blocked.clone();
             toolbar.omnibox().on_activate(move |text| {
                 let search_engine = config_c.search_engine();
                 let url = navigation::normalize_url_with_search(text, &search_engine);
@@ -188,6 +197,7 @@ impl MainWindow {
                         &toolbar_c,
                         &tabbar_c,
                         &window_c,
+                        &total_c,
                         true,
                     );
                 }
@@ -203,6 +213,7 @@ impl MainWindow {
             let toolbar_c = toolbar.clone();
             let tabbar_c = tabbar.clone();
             let window_c = window.clone();
+            let total_c = total_blocked.clone();
             toolbar.on_home(move || {
                 let home = config_c.homepage();
                 let id = active_c.get();
@@ -215,13 +226,14 @@ impl MainWindow {
                         &toolbar_c,
                         &tabbar_c,
                         &window_c,
+                        &total_c,
                         true,
                     );
                 }
             });
         }
 
-        // ---- Omnibox Star Button: Toggle Bookmark (Thêm hoặc Xóa Bookmark) ----
+        // ---- Omnibox Star Button: Toggle Bookmark ----
         {
             let tabs_c = tabs.clone();
             let active_c = active_tab_id.clone();
@@ -241,6 +253,7 @@ impl MainWindow {
             let toolbar_c = toolbar.clone();
             let tabbar_c = tabbar.clone();
             let window_c = window.clone();
+            let total_c = total_blocked.clone();
             toolbar.on_bookmarks_button(move || {
                 let id = active_c.get();
                 if let Some(tab) = tabs_c.borrow().iter().find(|t| t.tab_id == id) {
@@ -252,6 +265,7 @@ impl MainWindow {
                         &toolbar_c,
                         &tabbar_c,
                         &window_c,
+                        &total_c,
                         true,
                     );
                 }
@@ -319,6 +333,7 @@ impl MainWindow {
             let toolbar_c = toolbar.clone();
             let tabbar_c = tabbar.clone();
             let window_c = window.clone();
+            let total_c = total_blocked.clone();
             toolbar.on_bookmarks(move || {
                 let id = active_c.get();
                 if let Some(tab) = tabs_c.borrow().iter().find(|t| t.tab_id == id) {
@@ -330,6 +345,7 @@ impl MainWindow {
                         &toolbar_c,
                         &tabbar_c,
                         &window_c,
+                        &total_c,
                         true,
                     );
                 }
@@ -345,6 +361,7 @@ impl MainWindow {
             let toolbar_c = toolbar.clone();
             let tabbar_c = tabbar.clone();
             let window_c = window.clone();
+            let total_c = total_blocked.clone();
             toolbar.on_history(move || {
                 let id = active_c.get();
                 if let Some(tab) = tabs_c.borrow().iter().find(|t| t.tab_id == id) {
@@ -356,6 +373,7 @@ impl MainWindow {
                         &toolbar_c,
                         &tabbar_c,
                         &window_c,
+                        &total_c,
                         true,
                     );
                 }
@@ -371,6 +389,7 @@ impl MainWindow {
             let toolbar_c = toolbar.clone();
             let tabbar_c = tabbar.clone();
             let window_c = window.clone();
+            let total_c = total_blocked.clone();
             toolbar.on_settings(move || {
                 let id = active_c.get();
                 if let Some(tab) = tabs_c.borrow().iter().find(|t| t.tab_id == id) {
@@ -382,6 +401,7 @@ impl MainWindow {
                         &toolbar_c,
                         &tabbar_c,
                         &window_c,
+                        &total_c,
                         true,
                     );
                 }
@@ -397,6 +417,7 @@ impl MainWindow {
             let toolbar_c = toolbar.clone();
             let tabbar_c = tabbar.clone();
             let window_c = window.clone();
+            let total_c = total_blocked.clone();
             toolbar.on_about(move || {
                 let id = active_c.get();
                 if let Some(tab) = tabs_c.borrow().iter().find(|t| t.tab_id == id) {
@@ -408,13 +429,14 @@ impl MainWindow {
                         &toolbar_c,
                         &tabbar_c,
                         &window_c,
+                        &total_c,
                         true,
                     );
                 }
             });
         }
 
-        // ---- Menu: Quit (đóng cửa sổ an toàn thay vì exit(0) đột ngột) ----
+        // ---- Menu: Quit ----
         {
             let window_c = window.clone();
             toolbar.on_quit(move || {
@@ -433,7 +455,7 @@ impl MainWindow {
                 active_c.set(tab_id);
                 if let Some(tab) = tabs_c.borrow().iter().find(|t| t.tab_id == tab_id) {
                     let logical = tab.logical_url.borrow().clone();
-                    let display_url = if !logical.is_empty() && internal_pages::is_internal(&logical)
+                    let display_url = if (!logical.is_empty() && internal_pages::is_internal(&logical))
                         || logical == "kestrel://about"
                     {
                         logical
@@ -463,7 +485,7 @@ impl MainWindow {
             });
         }
 
-        // ---- Keyboard Shortcuts (Ctrl+T, Ctrl+W, Ctrl+L, Ctrl+R, F5, Ctrl+D, Ctrl+H, Ctrl+B, Ctrl+Tab...) ----
+        // ---- Keyboard Shortcuts ----
         {
             let key_ctrl = EventControllerKey::new();
             key_ctrl.set_propagation_phase(PropagationPhase::Capture);
@@ -486,6 +508,8 @@ impl MainWindow {
                     let id = active_c.get();
                     if let Some(tab) = tabs_c.borrow().iter().find(|t| t.tab_id == id) {
                         let current_url = tab.logical_url.borrow().clone();
+                        tab.blocked_count.set(0);
+                        toolbar_c.adblock().set_blocked_count(0, total_c.get());
                         if internal_pages::is_internal(&current_url)
                             || current_url == "kestrel://about"
                         {
@@ -497,6 +521,7 @@ impl MainWindow {
                                 &toolbar_c,
                                 &tabbar_c,
                                 &window_c,
+                                &total_c,
                                 true,
                             );
                         } else {
@@ -576,6 +601,7 @@ impl MainWindow {
                                     &toolbar_c,
                                     &tabbar_c,
                                     &window_c,
+                                    &total_c,
                                     true,
                                 );
                             }
@@ -592,6 +618,7 @@ impl MainWindow {
                                     &toolbar_c,
                                     &tabbar_c,
                                     &window_c,
+                                    &total_c,
                                     true,
                                 );
                             }
@@ -608,6 +635,7 @@ impl MainWindow {
                                     &toolbar_c,
                                     &tabbar_c,
                                     &window_c,
+                                    &total_c,
                                     true,
                                 );
                             }
@@ -617,7 +645,10 @@ impl MainWindow {
                             window_c.close();
                             return glib::Propagation::Stop;
                         }
-                        gdk::Key::Tab | gdk::Key::ISO_Left_Tab | gdk::Key::Page_Down | gdk::Key::Page_Up => {
+                        gdk::Key::Tab
+                        | gdk::Key::ISO_Left_Tab
+                        | gdk::Key::Page_Down
+                        | gdk::Key::Page_Up => {
                             let count = tabbar_c.count();
                             if count > 1 {
                                 let cur = tabbar_c.active_index();
@@ -807,6 +838,7 @@ impl MainWindow {
             let db_c = db.clone();
             let config_c = config.clone();
             let active_c = active_tab_id.clone();
+            let total_c = total_blocked.clone();
             ucm.connect_script_message_received(move |_ucm, _name, body| {
                 log::info!("Message from internal page: {}", body);
                 let Ok(v) = serde_json::from_str::<serde_json::Value>(body) else {
@@ -830,6 +862,7 @@ impl MainWindow {
                                     &toolbar_c,
                                     &tabbar_c,
                                     &window_c,
+                                    &total_c,
                                     id == active_c.get(),
                                 );
                             }
@@ -864,8 +897,12 @@ impl MainWindow {
                             let level = (ab as u8).min(2);
                             let _ = config_c.set_adblock_level(level);
                             toolbar_c.set_adblock_level(level);
+                            let blob = crate::adblock_rules::get_blob();
                             for t in tabs_c.borrow().iter() {
                                 t.webview.set_adblock_level(level as i32);
+                                if level > 0 && !blob.is_empty() {
+                                    t.webview.set_adblock_blob(blob.to_vec());
+                                }
                             }
                         }
                         log::info!("Settings saved and applied.");
@@ -891,6 +928,7 @@ impl MainWindow {
                                 &toolbar_c,
                                 &tabbar_c,
                                 &window_c,
+                                &total_c,
                                 true,
                             );
                         }
@@ -915,6 +953,7 @@ impl MainWindow {
                                         &toolbar_c,
                                         &tabbar_c,
                                         &window_c,
+                                        &total_c,
                                         true,
                                     );
                                 }
@@ -942,6 +981,7 @@ impl MainWindow {
                                 &toolbar_c,
                                 &tabbar_c,
                                 &window_c,
+                                &total_c,
                                 true,
                             );
                         }
@@ -963,6 +1003,7 @@ impl MainWindow {
                                         &toolbar_c,
                                         &tabbar_c,
                                         &window_c,
+                                        &total_c,
                                         true,
                                     );
                                 }
@@ -996,7 +1037,7 @@ impl MainWindow {
             });
         }
 
-        // ---- URI changed ----
+        // ---- URI changed (CHỈ reset blocked_count khi sang domain mới!) ----
         {
             let toolbar_c = toolbar.clone();
             let active_c = active_tab_id.clone();
@@ -1010,8 +1051,9 @@ impl MainWindow {
                         return;
                     }
                     let prev = logical_c.borrow().clone();
-                    if prev != uri {
-                        *logical_c.borrow_mut() = uri.clone();
+                    let domain_changed = !same_site_domain(&prev, &uri);
+                    *logical_c.borrow_mut() = uri.clone();
+                    if domain_changed {
                         blocked_c.set(0);
                     }
                     if active_c.get() == tab_id {
@@ -1025,7 +1067,7 @@ impl MainWindow {
             });
         }
 
-        // ---- Load state changed → Progress bar, Favicon & History ----
+        // ---- Load state changed ----
         {
             let db_c = db.clone();
             let tabbar_c = tabbar.clone();
@@ -1040,8 +1082,10 @@ impl MainWindow {
 
                 match event {
                     LoadEvent::Finished => {
-                        loading_c.set(false);
-                        tabbar_c.set_tab_loading(tab_id, false, is_internal);
+                        if loading_c.get() {
+                            loading_c.set(false);
+                            tabbar_c.set_tab_loading(tab_id, false, is_internal);
+                        }
                         if active_c.get() == tab_id {
                             toolbar_c.set_loading(false);
                         }
@@ -1052,8 +1096,10 @@ impl MainWindow {
                         }
                     }
                     _ => {
-                        loading_c.set(true);
-                        tabbar_c.set_tab_loading(tab_id, true, is_internal);
+                        if !loading_c.get() {
+                            loading_c.set(true);
+                            tabbar_c.set_tab_loading(tab_id, true, is_internal);
+                        }
                         if active_c.get() == tab_id {
                             toolbar_c.set_loading(true);
                         }
@@ -1062,14 +1108,14 @@ impl MainWindow {
             });
         }
 
-        // ---- Adblock blocked → Cập nhật bộ đếm trực tiếp trên Shields ----
+        // ---- Adblock blocked → Cập nhật số đếm trực tiếp trên Shields ----
         {
             let blocked_c = blocked_count.clone();
             let total_c = total_blocked.clone();
             let active_c = active_tab_id.clone();
             let toolbar_c = toolbar.clone();
             webview.connect_adblock_blocked(move |_wv, url, resource_type| {
-                log::debug!("[adblock] blocked: {} ({})", url, resource_type);
+                log::info!("[Shields] blocked: {} ({})", url, resource_type);
                 let new_tab_count = blocked_c.get().saturating_add(1);
                 let new_total = total_c.get().saturating_add(1);
                 blocked_c.set(new_tab_count);
@@ -1082,7 +1128,7 @@ impl MainWindow {
             });
         }
 
-        // ---- Popups (`target="_blank"` / `window.open`) → Mở tab mới ----
+        // ---- Popups (`target="_blank"` / `window.open`) ----
         {
             let window_c = window.clone();
             let tabs_c = tabs.clone();
@@ -1110,13 +1156,13 @@ impl MainWindow {
             });
         }
 
-        // ---- Adblock: Luôn gửi blob cho runner để có thể bật/tắt bất kỳ lúc nào ----
+        // ---- Adblock: Gọi set_adblock_level TRƯỚC set_adblock_blob theo chuẩn servo-gtk ----
+        let level = config.adblock_level();
+        webview.set_adblock_level(level as i32);
         let blob = crate::adblock_rules::get_blob();
         if !blob.is_empty() {
             webview.set_adblock_blob(blob.to_vec());
         }
-        let level = config.adblock_level();
-        webview.set_adblock_level(level as i32);
 
         let entry = TabEntry {
             tab_id,
@@ -1129,7 +1175,15 @@ impl MainWindow {
 
         active_tab_id.set(tab_id);
         navigate_tab(
-            &entry, url, db, config, toolbar, tabbar, window, true,
+            &entry,
+            url,
+            db,
+            config,
+            toolbar,
+            tabbar,
+            window,
+            total_blocked,
+            true,
         );
 
         tabs.borrow_mut().push(entry);
@@ -1138,6 +1192,21 @@ impl MainWindow {
 
     pub fn present(&self) {
         self.window.present();
+    }
+}
+
+/// Kiểm tra xem 2 URL có cùng một tên miền gốc hay không (bỏ qua tiền tố `www.` và dấu `/`).
+fn same_site_domain(a: &str, b: &str) -> bool {
+    let host_a = url::Url::parse(a)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.trim_start_matches("www.").to_lowercase()));
+    let host_b = url::Url::parse(b)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.trim_start_matches("www.").to_lowercase()));
+
+    match (host_a, host_b) {
+        (Some(ha), Some(hb)) => ha == hb,
+        _ => a.trim_end_matches('/') == b.trim_end_matches('/'),
     }
 }
 
@@ -1192,7 +1261,6 @@ fn toggle_active_bookmark(
     }
 }
 
-/// Điều hướng một `TabEntry` tới URL hoặc trang nội bộ `kestrel://`, đồng bộ Omnibox & Favicon.
 #[allow(clippy::too_many_arguments)]
 fn navigate_tab(
     tab: &TabEntry,
@@ -1202,6 +1270,7 @@ fn navigate_tab(
     toolbar: &Toolbar,
     tabbar: &TabBar,
     window: &ApplicationWindow,
+    total_blocked: &Rc<Cell<u64>>,
     is_active: bool,
 ) {
     let clean_url = if let Some(q) = internal_pages::query_string(url) {
@@ -1223,6 +1292,7 @@ fn navigate_tab(
         toolbar
             .omnibox()
             .set_bookmarked(db.is_bookmarked(clean_url));
+        toolbar.adblock().set_blocked_count(0, total_blocked.get());
     }
 
     let is_internal =
@@ -1293,7 +1363,6 @@ fn navigate_tab(
     }
 }
 
-/// Fallback: parse query string `kestrel://settings?...` và lưu vào config.
 fn apply_settings_query(
     query: &str,
     config: &Config,
