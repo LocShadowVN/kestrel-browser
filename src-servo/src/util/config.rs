@@ -1,4 +1,4 @@
-//! Config — wrapper quanh Database, cache trong RAM.
+//! Config — wrapper quanh Database, cache trong RAM và chuẩn hóa giá trị hợp lệ.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -16,19 +16,25 @@ impl Config {
     pub fn new(db: Rc<Database>) -> Self {
         let mut cached = AppConfig::default();
         if let Some(v) = db.load_config_item("search_engine") {
-            cached.search_engine = v;
+            let trimmed = v.trim();
+            if !trimmed.is_empty() {
+                cached.search_engine = trimmed.to_string();
+            }
         }
         if let Some(v) = db.load_config_item("homepage") {
-            cached.homepage = v;
+            let trimmed = v.trim();
+            if !trimmed.is_empty() {
+                cached.homepage = trimmed.to_string();
+            }
         }
         if let Some(v) = db.load_config_item("dark_theme") {
             cached.dark_theme = v == "true";
         }
         if let Some(v) = db.load_config_item("language") {
-            cached.language = v;
+            cached.language = if v == "vi" { "vi".into() } else { "en".into() };
         }
         if let Some(v) = db.load_config_item("adblock_level") {
-            cached.adblock_level = v.parse().unwrap_or(1);
+            cached.adblock_level = v.parse::<u8>().unwrap_or(1).min(2);
         }
         Self {
             db,
@@ -57,18 +63,28 @@ impl Config {
     }
 
     pub fn set_homepage(&self, value: &str) -> Result<(), String> {
+        let v = if value.trim().is_empty() {
+            "kestrel://home"
+        } else {
+            value.trim()
+        };
         self.db
-            .save_config_item("homepage", value)
+            .save_config_item("homepage", v)
             .map_err(|e| e.to_string())?;
-        self.cached.borrow_mut().homepage = value.to_string();
+        self.cached.borrow_mut().homepage = v.to_string();
         Ok(())
     }
 
     pub fn set_search_engine(&self, value: &str) -> Result<(), String> {
+        let v = if value.trim().is_empty() {
+            "https://search.brave.com/search?q="
+        } else {
+            value.trim()
+        };
         self.db
-            .save_config_item("search_engine", value)
+            .save_config_item("search_engine", v)
             .map_err(|e| e.to_string())?;
-        self.cached.borrow_mut().search_engine = value.to_string();
+        self.cached.borrow_mut().search_engine = v.to_string();
         Ok(())
     }
 
