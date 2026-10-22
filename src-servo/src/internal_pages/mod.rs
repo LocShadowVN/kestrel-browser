@@ -24,7 +24,7 @@ pub fn classify(url: &str) -> Option<Page> {
 
     match clean.as_str() {
         "kestrel://home" | "kestrel://newtab" | "kestrel://" | "kestrel:" => Some(Page::Home),
-        "kestrel://settings" | "kestrel://about" => Some(Page::Settings),
+        "kestrel://settings" => Some(Page::Settings),
         "kestrel://history" => Some(Page::History),
         "kestrel://bookmarks" => Some(Page::Bookmarks),
         _ => None,
@@ -86,10 +86,10 @@ mod tests {
     fn test_classify_pages() {
         assert_eq!(classify("kestrel://home"), Some(Page::Home));
         assert_eq!(classify("KESTREL://HOME/"), Some(Page::Home));
-        assert_eq!(classify("kestrel://about"), Some(Page::Settings));
         assert_eq!(classify("kestrel://settings#about"), Some(Page::Settings));
         assert_eq!(classify("kestrel://bookmarks?q=rust"), Some(Page::Bookmarks));
         assert_eq!(classify("kestrel://history"), Some(Page::History));
+        assert_eq!(classify("kestrel://about"), None);
         assert_eq!(classify("https://example.com"), None);
     }
 
