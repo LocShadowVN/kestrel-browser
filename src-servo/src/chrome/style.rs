@@ -1,7 +1,5 @@
 //! Global CSS cho Kestrel — Tông màu trung tính, đầm mắt, hài hòa cả Dark Mode lẫn Light Mode.
 
-use gtk4::prelude::*;
-
 const CSS: &str = r#"
 /* ============================================================
    WINDOW & THEME PALETTE
