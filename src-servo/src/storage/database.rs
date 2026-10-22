@@ -2,7 +2,7 @@ use rusqlite::{params, Connection};
 use shared::{BookmarkRecord, HistoryRecord};
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -20,6 +20,10 @@ impl Database {
 
         conn.execute_batch(
             "
+            PRAGMA journal_mode = WAL;
+            PRAGMA synchronous = NORMAL;
+            PRAGMA busy_timeout = 5000;
+
             CREATE TABLE IF NOT EXISTS history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 url TEXT NOT NULL,
@@ -47,17 +51,58 @@ impl Database {
         }
     }
 
+    fn lock_conn(&self) -> MutexGuard<'_, Connection> {
+        self.conn.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     pub fn insert_history(&self, url: &str, title: &str) -> rusqlite::Result<()> {
-        let conn = self.conn.lock().expect("Database mutex poisoned");
+        let trimmed = url.trim();
+        if trimmed.is_empty() || trimmed == "about:blank" {
+            return Ok(());
+        }
+
+        let conn = self.lock_conn();
+
+        // Nếu dòng lịch sử mới nhất có cùng URL, cập nhật lại title và timestamp thay vì tạo bản ghi trùng
+        let latest: Option<(i64, String)> = conn
+            .query_row(
+                "SELECT id, url FROM history ORDER BY id DESC LIMIT 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok();
+
+        if let Some((last_id, last_url)) = latest {
+            if last_url == trimmed {
+                if !title.trim().is_empty() {
+                    conn.execute(
+                        "UPDATE history SET title = ?1, timestamp = CURRENT_TIMESTAMP WHERE id = ?2",
+                        params![title, last_id],
+                    )?;
+                } else {
+                    conn.execute(
+                        "UPDATE history SET timestamp = CURRENT_TIMESTAMP WHERE id = ?1",
+                        params![last_id],
+                    )?;
+                }
+                return Ok(());
+            }
+        }
+
+        let safe_title = if title.trim().is_empty() {
+            trimmed
+        } else {
+            title
+        };
         conn.execute(
             "INSERT INTO history (url, title) VALUES (?1, ?2)",
-            params![url, title],
+            params![trimmed, safe_title],
         )?;
         Ok(())
     }
 
     pub fn fetch_history(&self, limit: usize) -> rusqlite::Result<Vec<HistoryRecord>> {
-        let conn = self.conn.lock().expect("Database mutex poisoned");
+        let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT id, url, title, timestamp FROM history ORDER BY id DESC LIMIT ?1",
         )?;
@@ -77,50 +122,59 @@ impl Database {
     }
 
     pub fn delete_history_item(&self, id: i64) -> rusqlite::Result<()> {
-        let conn = self.conn.lock().expect("Database mutex poisoned");
+        let conn = self.lock_conn();
         conn.execute("DELETE FROM history WHERE id = ?1", params![id])?;
         Ok(())
     }
 
     pub fn clear_history(&self) -> rusqlite::Result<()> {
-        let conn = self.conn.lock().expect("Database mutex poisoned");
+        let conn = self.lock_conn();
         conn.execute("DELETE FROM history", [])?;
         Ok(())
     }
 
     pub fn history_count(&self) -> usize {
-        let conn = self.conn.lock().expect("Database mutex poisoned");
+        let conn = self.lock_conn();
         conn.query_row("SELECT COUNT(*) FROM history", [], |r| r.get::<_, i64>(0))
             .unwrap_or(0) as usize
     }
 
     pub fn insert_bookmark(&self, url: &str, title: &str) -> rusqlite::Result<()> {
-        let conn = self.conn.lock().expect("Database mutex poisoned");
+        let trimmed = url.trim();
+        if trimmed.is_empty() {
+            return Ok(());
+        }
+        let safe_title = if title.trim().is_empty() {
+            trimmed
+        } else {
+            title
+        };
+        let conn = self.lock_conn();
         conn.execute(
             "INSERT OR REPLACE INTO bookmarks (url, title) VALUES (?1, ?2)",
-            params![url, title],
+            params![trimmed, safe_title],
         )?;
         Ok(())
     }
 
     pub fn is_bookmarked(&self, url: &str) -> bool {
-        let conn = self.conn.lock().expect("Database mutex poisoned");
+        let conn = self.lock_conn();
         conn.query_row(
             "SELECT 1 FROM bookmarks WHERE url = ?1 LIMIT 1",
-            params![url],
+            params![url.trim()],
             |_| Ok(()),
         )
         .is_ok()
     }
 
     pub fn remove_bookmark_by_url(&self, url: &str) -> rusqlite::Result<()> {
-        let conn = self.conn.lock().expect("Database mutex poisoned");
-        conn.execute("DELETE FROM bookmarks WHERE url = ?1", params![url])?;
+        let conn = self.lock_conn();
+        conn.execute("DELETE FROM bookmarks WHERE url = ?1", params![url.trim()])?;
         Ok(())
     }
 
     pub fn fetch_bookmarks(&self) -> rusqlite::Result<Vec<BookmarkRecord>> {
-        let conn = self.conn.lock().expect("Database mutex poisoned");
+        let conn = self.lock_conn();
         let mut stmt = conn.prepare("SELECT id, url, title FROM bookmarks ORDER BY id DESC")?;
         let rows = stmt.query_map([], |r| {
             Ok(BookmarkRecord {
@@ -137,25 +191,25 @@ impl Database {
     }
 
     pub fn remove_bookmark(&self, id: i64) -> rusqlite::Result<()> {
-        let conn = self.conn.lock().expect("Database mutex poisoned");
+        let conn = self.lock_conn();
         conn.execute("DELETE FROM bookmarks WHERE id = ?1", params![id])?;
         Ok(())
     }
 
     pub fn clear_bookmarks(&self) -> rusqlite::Result<()> {
-        let conn = self.conn.lock().expect("Database mutex poisoned");
+        let conn = self.lock_conn();
         conn.execute("DELETE FROM bookmarks", [])?;
         Ok(())
     }
 
     pub fn bookmark_count(&self) -> usize {
-        let conn = self.conn.lock().expect("Database mutex poisoned");
+        let conn = self.lock_conn();
         conn.query_row("SELECT COUNT(*) FROM bookmarks", [], |r| r.get::<_, i64>(0))
             .unwrap_or(0) as usize
     }
 
     pub fn save_config_item(&self, key: &str, val: &str) -> rusqlite::Result<()> {
-        let conn = self.conn.lock().expect("Database mutex poisoned");
+        let conn = self.lock_conn();
         conn.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
             params![key, val],
@@ -164,7 +218,7 @@ impl Database {
     }
 
     pub fn load_config_item(&self, key: &str) -> Option<String> {
-        let conn = self.conn.lock().expect("Database mutex poisoned");
+        let conn = self.lock_conn();
         let mut stmt = conn
             .prepare("SELECT value FROM settings WHERE key = ?1")
             .ok()?;
@@ -211,6 +265,18 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].url, "https://example.com");
         assert_eq!(rows[0].title, "Example");
+    }
+
+    #[test]
+    fn test_consecutive_duplicate_history_deduped() {
+        let db = temp_db();
+        db.insert_history("https://example.com", "https://example.com")
+            .unwrap();
+        db.insert_history("https://example.com", "Example Domain")
+            .unwrap();
+        let rows = db.fetch_history(10).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].title, "Example Domain");
     }
 
     #[test]
