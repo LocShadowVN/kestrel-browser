@@ -8,20 +8,39 @@ mod storage;
 mod util;
 
 use std::env;
+use std::fs;
 use std::path::Path;
 
-/// Thiết lập biến môi trường ép sử dụng GPU phần cứng / Card rời (NVIDIA & AMD/Mesa)
-/// và tối ưu hóa OpenGL/WebRender TRƯỚC KHI tiến trình con Servo runner được tạo.
+/// Kiểm tra xem DRM card có phải GPU rời (AMD/NVIDIA) đi kèm iGPU Intel ở card0 hay không.
+fn should_enable_dri_prime() -> bool {
+    let card0_vendor = fs::read_to_string("/sys/class/drm/card0/device/vendor")
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    let card1_vendor = fs::read_to_string("/sys/class/drm/card1/device/vendor")
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+
+    // Chỉ tự động bật DRI_PRIME=1 khi card0 là Intel iGPU (0x8086)
+    // và card1 là AMD (0x1002) hoặc NVIDIA (0x10de).
+    card0_vendor == "0x8086" && (card1_vendor == "0x1002" || card1_vendor == "0x10de")
+}
+
+/// Thiết lập biến môi trường tối ưu hóa GPU phần cứng và OpenGL/WebRender
+/// TRƯỚC KHI tiến trình con Servo runner được tạo.
 fn init_gpu_acceleration_env() {
-    // 1. Tuyệt đối không dùng CPU software rasterizer (llvmpipe/softpipe)
-    env::set_var("LIBGL_ALWAYS_SOFTWARE", "0");
+    // 1. Ưu tiên phần cứng nếu người dùng không chủ động cấu hình LIBGL_ALWAYS_SOFTWARE
+    if env::var_os("LIBGL_ALWAYS_SOFTWARE").is_none() {
+        env::set_var("LIBGL_ALWAYS_SOFTWARE", "0");
+    }
 
     // 2. Ép GTK4 dùng OpenGL hardware renderer đồng bộ với GLArea của servo-gtk
     if env::var_os("GSK_RENDERER").is_none() {
         env::set_var("GSK_RENDERER", "gl");
     }
 
-    // 3. Tắt chờ VBlank trong offscreen buffer của tiến trình con Servo để tránh Double-VSync gây giật
+    // 3. Tắt chờ VBlank trong offscreen buffer của tiến trình con Servo để tránh Double-VSync
     if env::var_os("vblank_mode").is_none() {
         env::set_var("vblank_mode", "0");
     }
@@ -29,12 +48,11 @@ fn init_gpu_acceleration_env() {
         env::set_var("__GL_SYNC_TO_VBLANK", "0");
     }
 
-    // 4. Tự động phát hiện và ép chạy trên Card rời (Discrete GPU)
+    // 4. Tự động phát hiện và tối ưu hóa cho NVIDIA hoặc Mesa (AMD / Intel)
     let has_nvidia = Path::new("/proc/driver/nvidia/version").exists()
         || Path::new("/dev/nvidiactl").exists();
 
     if has_nvidia {
-        // Hệ thống có driver NVIDIA rời (Optimus / Prime Render Offload)
         if env::var_os("__NV_PRIME_RENDER_OFFLOAD").is_none() {
             env::set_var("__NV_PRIME_RENDER_OFFLOAD", "1");
         }
@@ -44,25 +62,29 @@ fn init_gpu_acceleration_env() {
         if env::var_os("__GLX_VENDOR_LIBRARY_NAME").is_none() {
             env::set_var("__GLX_VENDOR_LIBRARY_NAME", "nvidia");
         }
-        // Bật đa luồng OpenGL và bộ nhớ đệm Shader trên đĩa cho NVIDIA
-        env::set_var("__GL_THREADED_OPTIMIZATIONS", "1");
-        env::set_var("__GL_SHADER_DISK_CACHE", "1");
-        env::set_var("__GL_SHADER_DISK_CACHE_SKIP_CLEANUP", "1");
+        if env::var_os("__GL_THREADED_OPTIMIZATIONS").is_none() {
+            env::set_var("__GL_THREADED_OPTIMIZATIONS", "1");
+        }
+        if env::var_os("__GL_SHADER_DISK_CACHE").is_none() {
+            env::set_var("__GL_SHADER_DISK_CACHE", "1");
+        }
+        if env::var_os("__GL_SHADER_DISK_CACHE_SKIP_CLEANUP").is_none() {
+            env::set_var("__GL_SHADER_DISK_CACHE_SKIP_CLEANUP", "1");
+        }
     } else {
-        // Hệ thống AMD / Intel Arc / Mesa: nếu có card thứ 2 (card1) thì ưu tiên DRI_PRIME=1
-        if Path::new("/sys/class/drm/card1").exists() && env::var_os("DRI_PRIME").is_none() {
+        if env::var_os("DRI_PRIME").is_none() && should_enable_dri_prime() {
             env::set_var("DRI_PRIME", "1");
         }
-        // Bật OpenGL multithreading và shader cache cho Mesa
         if env::var_os("mesa_glthread").is_none() {
             env::set_var("mesa_glthread", "true");
         }
-        env::set_var("MESA_SHADER_CACHE_DISABLE", "false");
+        if env::var_os("MESA_SHADER_CACHE_DISABLE").is_none() {
+            env::set_var("MESA_SHADER_CACHE_DISABLE", "false");
+        }
     }
 }
 
 fn main() -> glib::ExitCode {
-    // Khởi tạo biến môi trường GPU trước tiên để cả tiến trình chính lẫn tiến trình con Servo đều kế thừa
     init_gpu_acceleration_env();
 
     // CRITICAL: servo-gtk spawns a Servo runner subprocess by re-executing this binary.
@@ -72,7 +94,7 @@ fn main() -> glib::ExitCode {
 
     log::info!("Kestrel Browser starting (Servo engine + Hardware GPU Acceleration)");
 
-    // Nạp / biên dịch adblock blob trên luồng nền để cửa sổ trình duyệt hiện lên tức thì
+    // Khởi tạo sớm adblock blob trên luồng nền ngay trước khi GTK khởi chạy
     std::thread::spawn(|| {
         let blob = adblock_rules::get_blob();
         if blob.is_empty() {
