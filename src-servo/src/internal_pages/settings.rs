@@ -1,4 +1,4 @@
-//! Trang cài đặt nội bộ — kestrel://settings (Tối giản, đơn sắc).
+//! Trang cài đặt nội bộ — kestrel://settings & kestrel://about.
 
 use crate::internal_pages::NAV_SHIM;
 
@@ -11,7 +11,7 @@ pub fn render(
 ) -> String {
     let vi = lang == "vi";
     let theme_class = if dark { "dark" } else { "light" };
-    let en_sel = if lang == "en" { " selected" } else { "" };
+    let en_sel = if lang != "vi" { " selected" } else { "" };
     let vi_sel = if vi { " selected" } else { "" };
     let dark_checked = if dark { " checked" } else { "" };
 
@@ -31,22 +31,28 @@ pub fn render(
 <title>Kestrel — {title}</title>
 <style>
   :root {{
-    --bg: #101116; --fg: #e6e8f0; --muted: #8a8f9e;
-    --card: #171921; --border: #252834; --border-focus: #454a5e;
-    --btn-bg: #e6e8f0; --btn-fg: #101116;
+    --bg: #111318; --fg: #e6e8f0; --muted: #8a8f9e;
+    --card: #171a22; --border: #252936; --border-focus: #4a5068;
+    --btn-bg: #e6e8f0; --btn-fg: #111318;
   }}
   html.light {{
-    --bg: #f5f6f8; --fg: #16181f; --muted: #606575;
-    --card: #ffffff; --border: #dfe2ea; --border-focus: #8a90a6;
+    --bg: #f4f5f8; --fg: #16181f; --muted: #606575;
+    --card: #ffffff; --border: #dcdfe8; --border-focus: #7a8096;
     --btn-bg: #16181f; --btn-fg: #ffffff;
   }}
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
-    background: var(--bg); color: var(--fg); padding: 48px 24px;
+    background: var(--bg); color: var(--fg); padding: 44px 24px;
   }}
   .container {{ max-width: 680px; margin: 0 auto; }}
-  h1 {{ font-size: 26px; font-weight: 700; margin-bottom: 24px; letter-spacing: -0.4px; }}
+  .top-bar {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }}
+  h1 {{ font-size: 25px; font-weight: 700; letter-spacing: -0.4px; }}
+  .back-link {{
+    font-size: 13px; color: var(--muted); text-decoration: none;
+    padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card);
+  }}
+  .back-link:hover {{ color: var(--fg); border-color: var(--border-focus); }}
   h2 {{
     font-size: 11.5px; font-weight: 600; text-transform: uppercase;
     letter-spacing: 1px; color: var(--muted); margin: 28px 0 10px;
@@ -73,7 +79,7 @@ pub fn render(
     cursor: pointer;
   }}
   .preset-btn:hover {{ border-color: var(--border-focus); color: var(--fg); }}
-  .actions {{ margin-top: 22px; display: flex; gap: 10px; flex-wrap: wrap; }}
+  .actions {{ margin-top: 22px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }}
   button {{
     padding: 9px 18px; font-size: 13.5px; font-weight: 600;
     border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
@@ -81,7 +87,7 @@ pub fn render(
   .primary {{ background: var(--btn-bg); color: var(--btn-fg); border-color: var(--btn-bg); }}
   .secondary {{ background: var(--card); color: var(--fg); }}
   .secondary:hover {{ border-color: var(--border-focus); }}
-  .status {{ margin-top: 14px; font-size: 13px; color: var(--muted); min-height: 18px; }}
+  .status {{ font-size: 13px; color: var(--muted); min-height: 18px; }}
   .about-row {{
     display: flex; justify-content: space-between; align-items: center;
     padding: 12px 18px; font-size: 13.5px;
@@ -100,7 +106,10 @@ pub fn render(
 </head>
 <body>
 <div class="container">
-  <h1>{title}</h1>
+  <div class="top-bar">
+    <h1>{title}</h1>
+    <a class="back-link" href="kestrel://home">← {home_lbl}</a>
+  </div>
   <form id="settings-form" action="kestrel://settings" method="get">
     <h2>{general}</h2>
     <div class="field">
@@ -158,11 +167,11 @@ pub fn render(
     <div class="actions">
       <button type="submit" class="primary">{save}</button>
       <button type="button" id="reset-btn" class="secondary">{reset}</button>
+      <span class="status" id="status"></span>
     </div>
-    <div class="status" id="status"></div>
   </form>
 
-  <h2>{about}</h2>
+  <h2 id="about">{about}</h2>
   <div class="about-card">
     <div class="about-row"><span>{version_label}</span><span class="badge">1.0.0-alpha</span></div>
     <div class="about-row"><span>{engine_label}</span><span>Servo + adblock-rust</span></div>
@@ -171,8 +180,10 @@ pub fn render(
   </div>
 </div>
 
+<script>{shim}</script>
 <script>
 (function () {{
+  var initialLang = '{lang}';
   var form = document.getElementById('settings-form');
   var statusEl = document.getElementById('status');
 
@@ -185,19 +196,23 @@ pub fn render(
   form.addEventListener('submit', function (e) {{
     e.preventDefault();
     var isDark = document.getElementById('dark_theme').checked;
+    var selectedLang = document.getElementById('language').value;
     document.documentElement.className = isDark ? 'dark' : 'light';
     var data = {{
       action: 'save-settings',
-      homepage: document.getElementById('homepage').value.trim(),
-      search_engine: document.getElementById('search_engine').value.trim(),
-      language: document.getElementById('language').value,
+      homepage: document.getElementById('homepage').value.trim() || 'kestrel://home',
+      search_engine: document.getElementById('search_engine').value.trim() || 'https://search.brave.com/search?q=',
+      language: selectedLang,
       dark_theme: isDark,
       adblock_level: parseInt(document.getElementById('adblock_level').value, 10)
     }};
-    if (window.servoGtk && window.servoGtk.messageHandlers &&
-        window.servoGtk.messageHandlers.kestrel) {{
-      window.servoGtk.messageHandlers.kestrel.postMessage(JSON.stringify(data));
+    if (window.__kestrelSend && window.__kestrelSend(data)) {{
       statusEl.textContent = '{saved_msg}';
+      if (selectedLang !== initialLang) {{
+        setTimeout(function () {{
+          window.__kestrelSend({{ action: 'navigate', url: 'kestrel://settings' }});
+        }}, 80);
+      }}
     }} else {{
       form.submit();
     }}
@@ -206,11 +221,15 @@ pub fn render(
   var resetBtn = document.getElementById('reset-btn');
   if (resetBtn) {{
     resetBtn.addEventListener('click', function () {{
-      if (window.servoGtk && window.servoGtk.messageHandlers &&
-          window.servoGtk.messageHandlers.kestrel) {{
-        window.servoGtk.messageHandlers.kestrel.postMessage(JSON.stringify({{
-          action: 'reset-settings'
-        }}));
+      document.getElementById('homepage').value = 'kestrel://home';
+      document.getElementById('search_engine').value = 'https://search.brave.com/search?q=';
+      document.getElementById('language').value = 'en';
+      document.getElementById('dark_theme').checked = true;
+      document.getElementById('adblock_level').value = '1';
+      document.documentElement.className = 'dark';
+      if (window.__kestrelSend) {{
+        window.__kestrelSend({{ action: 'reset-settings' }});
+        statusEl.textContent = '{saved_msg}';
       }}
     }});
   }}
@@ -218,23 +237,20 @@ pub fn render(
   var clearHistBtn = document.getElementById('clear-history-btn');
   if (clearHistBtn) {{
     clearHistBtn.addEventListener('click', function () {{
-      if (window.servoGtk && window.servoGtk.messageHandlers &&
-          window.servoGtk.messageHandlers.kestrel) {{
-        window.servoGtk.messageHandlers.kestrel.postMessage(JSON.stringify({{
-          action: 'clear-history'
-        }}));
+      if (window.__kestrelSend) {{
+        window.__kestrelSend({{ action: 'clear-history' }});
         statusEl.textContent = '{cleared_msg}';
       }}
     }});
   }}
 }})();
 </script>
-<script>{shim}</script>
 </body>
 </html>"#,
         lang = lang,
         theme_class = theme_class,
         title = t("Settings", "Cài đặt"),
+        home_lbl = t("Home", "Trang chủ"),
         general = t("GENERAL", "CÀI ĐẶT CHUNG"),
         appearance = t("APPEARANCE", "GIAO DIỆN"),
         privacy = t("SHIELDS & PRIVACY", "KHIÊN CHẮN & RIÊNG TƯ"),
