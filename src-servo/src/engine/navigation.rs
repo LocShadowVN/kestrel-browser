@@ -13,22 +13,31 @@ pub fn normalize_url_with_search(input: &str, search_engine: &str) -> String {
         return "about:blank".into();
     }
 
-    // Kestrel internal pages — giữ nguyên, không qua search.
-    if input.starts_with("kestrel://") || input == "kestrel:" {
+    let lower = input.to_ascii_lowercase();
+
+    // Kestrel internal pages — giữ nguyên, chuẩn hóa scheme về chữ thường.
+    if lower.starts_with("kestrel://") || lower == "kestrel:" {
+        let rest = &input[input.find(':').map(|i| i + 1).unwrap_or(input.len())..];
+        return format!("kestrel:{}", rest);
+    }
+
+    if lower.starts_with("http://")
+        || lower.starts_with("https://")
+        || lower.starts_with("about:")
+        || lower.starts_with("file://")
+        || lower.starts_with("data:")
+    {
+        if let Some(colon_idx) = input.find(':') {
+            return format!(
+                "{}{}",
+                &lower[..colon_idx],
+                &input[colon_idx..]
+            );
+        }
         return input.to_string();
     }
 
-    if input.starts_with("http://")
-        || input.starts_with("https://")
-        || input.starts_with("about:")
-        || input.starts_with("file://")
-        || input.starts_with("data:")
-    {
-        return input.to_string();
-    }
-
-    if input.starts_with("localhost") || input.starts_with("127.0.0.1") || input.starts_with("[::1]")
-    {
+    if is_local_address(input) {
         return format!("http://{}", input);
     }
 
@@ -45,31 +54,85 @@ pub fn normalize_url_with_search(input: &str, search_engine: &str) -> String {
     format!("{}{}", engine, urlencoding(input))
 }
 
+fn is_local_address(input: &str) -> bool {
+    if input.contains(char::is_whitespace) {
+        return false;
+    }
+
+    let host_port = input.split(&['/', '?', '#'][..]).next().unwrap_or(input);
+    let host_port_lower = host_port.to_ascii_lowercase();
+
+    // IPv6 loopback [::1] hoặc [::1]:port
+    if let Some(rest) = host_port_lower.strip_prefix("[::1]") {
+        return rest.is_empty() || rest.strip_prefix(':').map_or(false, is_valid_port);
+    }
+
+    let (host, port_opt) = match host_port_lower.split_once(':') {
+        Some((h, p)) => (h, Some(p)),
+        None => (host_port_lower.as_str(), None),
+    };
+
+    if let Some(port) = port_opt {
+        if !is_valid_port(port) {
+            return false;
+        }
+    }
+
+    host == "localhost"
+        || host.ends_with(".localhost")
+        || host == "127.0.0.1"
+        || host == "0.0.0.0"
+}
+
+fn is_valid_port(port: &str) -> bool {
+    !port.is_empty() && port.parse::<u16>().map_or(false, |p| p > 0)
+}
+
 fn looks_like_domain_or_url(input: &str) -> bool {
     if input.contains(char::is_whitespace) || !input.contains('.') {
         return false;
     }
 
-    // Tách phần host trước `/` hoặc `?` hoặc `:`
+    // Tách phần host[:port] trước `/`, `?`, `#`
     let host_port = input.split(&['/', '?', '#'][..]).next().unwrap_or(input);
-    let host = host_port.split(':').next().unwrap_or(host_port);
+    if host_port.is_empty() {
+        return false;
+    }
+
+    let (host, port_opt) = match host_port.split_once(':') {
+        Some((h, p)) => (h, Some(p)),
+        None => (host_port, None),
+    };
+
+    if let Some(port) = port_opt {
+        if !is_valid_port(port) {
+            return false;
+        }
+    }
 
     if host.is_empty() || host.starts_with('.') || host.ends_with('.') {
         return false;
     }
 
-    // Kiểm tra IPv4 (ví dụ 192.168.1.1:8080)
     let parts: Vec<&str> = host.split('.').collect();
+    if parts.len() < 2 {
+        return false;
+    }
+
+    // Kiểm tra IPv4 (ví dụ 192.168.1.1:8080)
     if parts.len() == 4 && parts.iter().all(|p| p.parse::<u8>().is_ok()) {
         return true;
     }
 
     // Kiểm tra TLD hợp lệ (>= 2 ký tự chữ cái hoặc punycode xn--)
     if let Some(tld) = parts.last() {
-        let valid_tld = (tld.len() >= 2 && tld.chars().all(|c| c.is_ascii_alphabetic()))
-            || tld.starts_with("xn--");
+        let tld_lower = tld.to_ascii_lowercase();
+        let valid_tld = (tld_lower.len() >= 2
+            && tld_lower.chars().all(|c| c.is_ascii_alphabetic()))
+            || (tld_lower.starts_with("xn--") && tld_lower.len() > 4);
         let valid_labels = parts.iter().all(|label| {
             !label.is_empty()
+                && label.len() <= 63
                 && !label.starts_with('-')
                 && !label.ends_with('-')
                 && label
@@ -100,6 +163,7 @@ mod tests {
     fn test_full_url() {
         assert_eq!(normalize_url("https://example.com"), "https://example.com");
         assert_eq!(normalize_url("http://example.com"), "http://example.com");
+        assert_eq!(normalize_url("HTTPS://Example.com/Path"), "https://Example.com/Path");
     }
 
     #[test]
@@ -109,11 +173,27 @@ mod tests {
             normalize_url("github.com/LocShadowVN/kestrel-browser"),
             "https://github.com/LocShadowVN/kestrel-browser"
         );
+        assert_eq!(
+            normalize_url("192.168.1.1:8080/admin"),
+            "https://192.168.1.1:8080/admin"
+        );
     }
 
     #[test]
-    fn test_search() {
+    fn test_search_and_non_domains() {
         assert!(normalize_url("hello world").starts_with("https://search.brave.com/search?q="));
+        assert!(
+            normalize_url("localhost vs 127.0.0.1")
+                .starts_with("https://search.brave.com/search?q=")
+        );
+        assert!(
+            normalize_url("what/is.this")
+                .starts_with("https://search.brave.com/search?q=")
+        );
+        assert!(
+            normalize_url("foo:bar.com")
+                .starts_with("https://search.brave.com/search?q=")
+        );
     }
 
     #[test]
@@ -127,6 +207,7 @@ mod tests {
         assert_eq!(normalize_url("kestrel://home"), "kestrel://home");
         assert_eq!(normalize_url("kestrel://settings"), "kestrel://settings");
         assert_eq!(normalize_url("kestrel://history"), "kestrel://history");
+        assert_eq!(normalize_url("KESTREL://about"), "kestrel://about");
         assert_eq!(normalize_url("kestrel:"), "kestrel:");
     }
 
@@ -137,8 +218,11 @@ mod tests {
 
     #[test]
     fn test_localhost() {
+        assert_eq!(normalize_url("localhost"), "http://localhost");
         assert_eq!(normalize_url("localhost:8080"), "http://localhost:8080");
-        assert_eq!(normalize_url("127.0.0.1:3000"), "http://127.0.0.1:3000");
+        assert_eq!(normalize_url("127.0.0.1:3000/api"), "http://127.0.0.1:3000/api");
+        assert_eq!(normalize_url("[::1]:5173"), "http://[::1]:5173");
+        assert_eq!(normalize_url("localhost.com"), "https://localhost.com");
     }
 
     #[test]
