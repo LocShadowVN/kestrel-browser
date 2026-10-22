@@ -1,186 +1,229 @@
-//! Omnibox — Thanh địa chỉ tích hợp:
-//! [ Icon bảo mật ] [ Ô nhập địa chỉ / tìm kiếm ] [ Ngôi sao Bookmark ] [ | ] [ Khiên Shields + Số đếm ]
+//! Adblock button (Kestrel Shields) — Tích hợp trực tiếp bên trong thanh Omnibox.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use gtk4::{Box as GtkBox, Button, Entry, Image, Orientation, Separator};
+use gtk4::{Box as GtkBox, Image, Label, MenuButton, Orientation, Popover, ToggleButton};
 
-use crate::chrome::adblock_button::AdblockButton;
 use crate::chrome::icons;
 
-pub struct Omnibox {
-    container: GtkBox,
-    security_icon: Image,
-    security_state: Cell<u8>,
-    entry: Entry,
-    star_btn: Button,
-    star_icon: Image,
-    bookmarked: Cell<bool>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdblockLevel {
+    Off,
+    Standard,
+    Aggressive,
 }
 
-impl Omnibox {
-    pub fn new(adblock: &Rc<AdblockButton>) -> Self {
-        let container = GtkBox::new(Orientation::Horizontal, 4);
-        container.add_css_class("kestrel-omnibox-box");
-        container.set_hexpand(true);
+impl AdblockLevel {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => "Off (Shields Down)",
+            Self::Standard => "Standard",
+            Self::Aggressive => "Aggressive",
+        }
+    }
 
-        let security_icon =
-            icons::svg_image(icons::KESTREL_BADGE, "web-browser-symbolic", 14);
-        security_icon.add_css_class("kestrel-omnibox-security");
-        security_icon.set_tooltip_text(Some("Kestrel Internal Page"));
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::Off => "No network filtering",
+            Self::Standard => "EasyList + EasyPrivacy",
+            Self::Aggressive => "Standard + Fanboy's Annoyances",
+        }
+    }
 
-        let entry = Entry::builder()
-            .placeholder_text("Search the web or enter address...")
-            .hexpand(true)
-            .build();
-        entry.add_css_class("kestrel-omnibox-entry");
+    pub fn svg(self) -> &'static str {
+        match self {
+            Self::Off => icons::SHIELD_OFF,
+            Self::Standard => icons::SHIELD_STANDARD,
+            Self::Aggressive => icons::SHIELD_AGGRESSIVE,
+        }
+    }
 
-        let star_icon = icons::svg_image(icons::STAR_OUTLINE, "non-starred-symbolic", 15);
-        let star_btn = Button::new();
-        star_btn.set_child(Some(&star_icon));
-        star_btn.add_css_class("kestrel-omnibox-action");
-        star_btn.set_tooltip_text(Some("Bookmark this page (Ctrl+D)"));
+    pub fn fallback_icon(self) -> &'static str {
+        match self {
+            Self::Off => "security-low-symbolic",
+            Self::Standard => "security-medium-symbolic",
+            Self::Aggressive => "security-high-symbolic",
+        }
+    }
 
-        let divider = Separator::new(Orientation::Vertical);
-        divider.add_css_class("kestrel-omnibox-divider");
+    pub fn from_u8(v: u8) -> Self {
+        match v {
+            1 => Self::Standard,
+            2 => Self::Aggressive,
+            _ => Self::Off,
+        }
+    }
 
-        container.append(&security_icon);
-        container.append(&entry);
-        container.append(&star_btn);
-        container.append(&divider);
-        container.append(adblock.widget());
+    pub fn as_u8(self) -> u8 {
+        match self {
+            Self::Off => 0,
+            Self::Standard => 1,
+            Self::Aggressive => 2,
+        }
+    }
+}
+
+pub struct AdblockButton {
+    container: MenuButton,
+    icon_img: Image,
+    badge_label: Label,
+    popover_stat_num: Label,
+    #[allow(dead_code)]
+    popover: Popover,
+    current: Rc<Cell<AdblockLevel>>,
+    toggles: Rc<RefCell<Vec<(AdblockLevel, ToggleButton)>>>,
+}
+
+impl AdblockButton {
+    pub fn new<F>(initial: AdblockLevel, on_change: F) -> Self
+    where
+        F: Fn(u8) + 'static,
+    {
+        let container = MenuButton::new();
+        container.set_tooltip_text(Some("Kestrel Shields — Ad & Tracker Blocking"));
+        container.add_css_class("kestrel-omnibox-shield");
+        if initial == AdblockLevel::Off {
+            container.add_css_class("shield-off");
+        }
+
+        let btn_content = GtkBox::new(Orientation::Horizontal, 4);
+        let icon_img = icons::svg_image(initial.svg(), initial.fallback_icon(), 16);
+        let badge_label = Label::new(Some("0"));
+        badge_label.add_css_class("kestrel-shield-count");
+        btn_content.append(&icon_img);
+        btn_content.append(&badge_label);
+        container.set_child(Some(&btn_content));
+
+        let current = Rc::new(Cell::new(initial));
+        let on_change: Rc<dyn Fn(u8)> = Rc::new(on_change);
+
+        let popover = Popover::new();
+        popover.set_has_arrow(false);
+
+        let menu = GtkBox::new(Orientation::Vertical, 0);
+        menu.add_css_class("kestrel-menu");
+        menu.add_css_class("kestrel-shield-popover");
+
+        let header = GtkBox::new(Orientation::Vertical, 2);
+        header.add_css_class("kestrel-shield-header");
+        let popover_stat_num = Label::new(Some("0"));
+        popover_stat_num.add_css_class("kestrel-shield-stat-num");
+        popover_stat_num.set_xalign(0.0);
+        let stat_desc = Label::new(Some("Ads & trackers blocked on this page"));
+        stat_desc.add_css_class("kestrel-shield-stat-label");
+        stat_desc.set_xalign(0.0);
+        header.append(&popover_stat_num);
+        header.append(&stat_desc);
+        menu.append(&header);
+
+        let title = Label::new(Some("Shields Protection Level"));
+        title.add_css_class("kestrel-menu-title");
+        title.set_xalign(0.0);
+        menu.append(&title);
+
+        let toggles: Rc<RefCell<Vec<(AdblockLevel, ToggleButton)>>> =
+            Rc::new(RefCell::new(Vec::new()));
+        let mut first_toggle: Option<ToggleButton> = None;
+
+        for level in [
+            AdblockLevel::Off,
+            AdblockLevel::Standard,
+            AdblockLevel::Aggressive,
+        ] {
+            let btn = ToggleButton::with_label(level.label());
+            btn.add_css_class("kestrel-menu-item");
+            btn.set_active(level == initial);
+
+            if let Some(first) = &first_toggle {
+                btn.set_group(Some(first));
+            } else {
+                first_toggle = Some(btn.clone());
+            }
+
+            let current_c = current.clone();
+            let on_change_c = on_change.clone();
+            let popover_c = popover.clone();
+            let container_c = container.clone();
+            let icon_img_c = icon_img.clone();
+            btn.connect_toggled(move |b| {
+                if b.is_active() && current_c.get() != level {
+                    current_c.set(level);
+                    icons::set_image_svg(&icon_img_c, level.svg(), level.fallback_icon(), 16);
+                    if level == AdblockLevel::Off {
+                        container_c.add_css_class("shield-off");
+                    } else {
+                        container_c.remove_css_class("shield-off");
+                    }
+                    (on_change_c)(level.as_u8());
+                    popover_c.popdown();
+                }
+            });
+
+            menu.append(&btn);
+
+            let desc = Label::new(Some(level.description()));
+            desc.add_css_class("kestrel-menu-desc");
+            desc.set_xalign(0.0);
+            menu.append(&desc);
+
+            toggles.borrow_mut().push((level, btn));
+        }
+
+        popover.set_child(Some(&menu));
+        container.set_popover(Some(&popover));
 
         Self {
             container,
-            security_icon,
-            security_state: Cell::new(0),
-            entry,
-            star_btn,
-            star_icon,
-            bookmarked: Cell::new(false),
+            icon_img,
+            badge_label,
+            popover_stat_num,
+            popover,
+            current,
+            toggles,
         }
     }
 
-    pub fn on_activate<F: Fn(&str) + 'static>(&self, cb: F) {
-        self.entry.connect_activate(move |entry| {
-            let text = entry.text().to_string();
-            cb(&text);
-        });
-    }
-
-    pub fn on_bookmark_toggle<F: Fn() + 'static>(&self, cb: F) {
-        self.star_btn.connect_clicked(move |_| cb());
-    }
-
-    pub fn set_text(&self, text: &str) {
-        if self.entry.text().as_str() != text {
-            self.entry.set_text(text);
-        }
-        self.update_security_indicator(text);
-    }
-
-    #[allow(dead_code)]
-    pub fn text(&self) -> String {
-        self.entry.text().to_string()
-    }
-
-    pub fn set_bookmarked(&self, is_bookmarked: bool) {
-        if self.bookmarked.get() == is_bookmarked {
-            return;
-        }
-        self.bookmarked.set(is_bookmarked);
-        if is_bookmarked {
-            self.star_btn.add_css_class("bookmarked");
-            icons::set_image_svg(&self.star_icon, icons::STAR_FILLED, "starred-symbolic", 15);
-            self.star_btn
-                .set_tooltip_text(Some("Remove bookmark (Ctrl+D)"));
-        } else {
-            self.star_btn.remove_css_class("bookmarked");
-            icons::set_image_svg(
-                &self.star_icon,
-                icons::STAR_OUTLINE,
-                "non-starred-symbolic",
-                15,
-            );
-            self.star_btn
-                .set_tooltip_text(Some("Bookmark this page (Ctrl+D)"));
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn is_bookmarked(&self) -> bool {
-        self.bookmarked.get()
-    }
-
-    fn update_security_indicator(&self, url: &str) {
-        let u = url.trim().to_ascii_lowercase();
-        let new_state = if u.starts_with("https://") {
-            1
-        } else if u.starts_with("http://") {
-            2
-        } else if u.starts_with("kestrel://") || u == "kestrel:" {
-            3
-        } else {
-            4
-        };
-
-        if self.security_state.get() == new_state {
-            return;
-        }
-        self.security_state.set(new_state);
-
-        match new_state {
-            1 => {
-                icons::set_image_svg(
-                    &self.security_icon,
-                    icons::LOCK_SECURE,
-                    "channel-secure-symbolic",
-                    14,
-                );
-                self.security_icon
-                    .set_tooltip_text(Some("Connection is secure (HTTPS)"));
-            }
-            2 => {
-                icons::set_image_svg(
-                    &self.security_icon,
-                    icons::INFO_INSECURE,
-                    "dialog-warning-symbolic",
-                    14,
-                );
-                self.security_icon
-                    .set_tooltip_text(Some("Connection is not encrypted (HTTP)"));
-            }
-            3 => {
-                icons::set_image_svg(
-                    &self.security_icon,
-                    icons::KESTREL_BADGE,
-                    "web-browser-symbolic",
-                    14,
-                );
-                self.security_icon
-                    .set_tooltip_text(Some("Kestrel Internal Page"));
-            }
-            _ => {
-                icons::set_image_svg(
-                    &self.security_icon,
-                    icons::SEARCH_ICON,
-                    "system-search-symbolic",
-                    14,
-                );
-                self.security_icon
-                    .set_tooltip_text(Some("Search or enter address"));
-            }
-        }
-    }
-
-    pub fn focus_and_select(&self) {
-        self.entry.grab_focus();
-        self.entry.select_region(0, -1);
-    }
-
-    pub fn widget(&self) -> &GtkBox {
+    pub fn widget(&self) -> &MenuButton {
         &self.container
+    }
+
+    pub fn set_level(&self, level: u8) {
+        let l = AdblockLevel::from_u8(level);
+        self.current.set(l);
+        icons::set_image_svg(&self.icon_img, l.svg(), l.fallback_icon(), 16);
+        if l == AdblockLevel::Off {
+            self.container.add_css_class("shield-off");
+        } else {
+            self.container.remove_css_class("shield-off");
+        }
+        for (lv, btn) in self.toggles.borrow().iter() {
+            if btn.is_active() != (*lv == l) {
+                btn.set_active(*lv == l);
+            }
+        }
+    }
+
+    pub fn set_blocked_count(&self, tab_blocked: u32, total_blocked: u64) {
+        let compact = if tab_blocked > 999 {
+            "999+".to_string()
+        } else {
+            tab_blocked.to_string()
+        };
+        self.badge_label.set_text(&compact);
+        self.popover_stat_num
+            .set_text(&format!("{} ({} session total)", tab_blocked, total_blocked));
+        self.container.set_tooltip_text(Some(&format!(
+            "Kestrel Shields ({}) — {} blocked on this page ({} total)",
+            self.current.get().label(),
+            tab_blocked,
+            total_blocked
+        )));
+    }
+
+    #[allow(dead_code)]
+    pub fn current_level(&self) -> AdblockLevel {
+        self.current.get()
     }
 }
