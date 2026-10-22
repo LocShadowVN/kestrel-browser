@@ -1,4 +1,4 @@
-//! Omnibox — Thanh địa chỉ tích hợp chuẩn Brave:
+//! Omnibox — Thanh địa chỉ tích hợp:
 //! [ Icon bảo mật ] [ Ô nhập địa chỉ / tìm kiếm ] [ Ngôi sao Bookmark ] [ | ] [ Khiên Shields + Số đếm ]
 
 use std::cell::Cell;
@@ -92,10 +92,12 @@ impl Omnibox {
         }
         self.bookmarked.set(is_bookmarked);
         if is_bookmarked {
+            self.star_btn.add_css_class("bookmarked");
             icons::set_image_svg(&self.star_icon, icons::STAR_FILLED, "starred-symbolic", 15);
             self.star_btn
                 .set_tooltip_text(Some("Remove bookmark (Ctrl+D)"));
         } else {
+            self.star_btn.remove_css_class("bookmarked");
             icons::set_image_svg(
                 &self.star_icon,
                 icons::STAR_OUTLINE,
@@ -113,7 +115,7 @@ impl Omnibox {
     }
 
     fn update_security_indicator(&self, url: &str) {
-        let u = url.trim();
+        let u = url.trim().to_ascii_lowercase();
         let new_state = if u.starts_with("https://") {
             1
         } else if u.starts_with("http://") {
