@@ -70,6 +70,8 @@ pub struct AdblockButton {
     icon_img: Image,
     badge_label: Label,
     popover_stat_num: Label,
+    last_tab_blocked: Cell<u32>,
+    last_total_blocked: Cell<u64>,
     #[allow(dead_code)]
     popover: Popover,
     current: Rc<Cell<AdblockLevel>>,
@@ -179,6 +181,8 @@ impl AdblockButton {
             icon_img,
             badge_label,
             popover_stat_num,
+            last_tab_blocked: Cell::new(u32::MAX),
+            last_total_blocked: Cell::new(u64::MAX),
             popover,
             current,
             toggles,
@@ -206,6 +210,14 @@ impl AdblockButton {
     }
 
     pub fn set_blocked_count(&self, tab_blocked: u32, total_blocked: u64) {
+        if self.last_tab_blocked.get() == tab_blocked
+            && self.last_total_blocked.get() == total_blocked
+        {
+            return;
+        }
+        self.last_tab_blocked.set(tab_blocked);
+        self.last_total_blocked.set(total_blocked);
+
         let compact = if tab_blocked > 999 {
             "999+".to_string()
         } else {
@@ -214,12 +226,6 @@ impl AdblockButton {
         self.badge_label.set_text(&compact);
         self.popover_stat_num
             .set_text(&format!("{} ({} session total)", tab_blocked, total_blocked));
-        self.container.set_tooltip_text(Some(&format!(
-            "Kestrel Shields ({}) — {} blocked on this page ({} total)",
-            self.current.get().label(),
-            tab_blocked,
-            total_blocked
-        )));
     }
 
     #[allow(dead_code)]
