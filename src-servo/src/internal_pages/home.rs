@@ -1,14 +1,26 @@
 //! Trang chủ nội bộ — kestrel://home.
-//! Thiết kế tinh gọn, đầm mắt, hỗ trợ phím tắt `/` để focus ô tìm kiếm và lối tắt truy cập nhanh.
+//! Thiết kế Dashboard kiểu Brave với thanh thống kê Shields trực quan và lối tắt truy cập nhanh.
 
 use crate::internal_pages::NAV_SHIM;
 
+#[allow(dead_code)]
 pub fn render(
     lang: &str,
     dark: bool,
     bookmark_count: usize,
     history_count: usize,
     adblock_level: u8,
+) -> String {
+    render_with_stats(lang, dark, bookmark_count, history_count, adblock_level, 0)
+}
+
+pub fn render_with_stats(
+    lang: &str,
+    dark: bool,
+    bookmark_count: usize,
+    history_count: usize,
+    adblock_level: u8,
+    total_blocked: u64,
 ) -> String {
     let vi = lang == "vi";
     let theme_class = if dark { "dark" } else { "light" };
@@ -18,9 +30,17 @@ pub fn render(
     };
 
     let shield_status = match adblock_level {
-        0 => t("Shields Off", "Khiên: Tắt"),
-        2 => t("Shields: Aggressive", "Khiên: Mạnh"),
-        _ => t("Shields: Standard", "Khiên: Tiêu chuẩn"),
+        0 => t("Off", "Tắt"),
+        2 => t("Aggressive", "Mạnh"),
+        _ => t("Standard", "Tiêu chuẩn"),
+    };
+
+    // Ước tính băng thông tiết kiệm (~28 KB mỗi quảng cáo/tracker)
+    let kb_saved = total_blocked.saturating_mul(28);
+    let data_saved_str = if kb_saved >= 1024 {
+        format!("{:.1} MB", (kb_saved as f64) / 1024.0)
+    } else {
+        format!("{} KB", kb_saved)
     };
 
     format!(
@@ -33,12 +53,11 @@ pub fn render(
   :root {{
     --bg: #111318;
     --fg: #e8eaf2;
-    --muted: #84899c;
+    --muted: #868b9e;
     --card: #171a22;
-    --card-hover: #1d212c;
+    --card-hover: #1e222d;
     --border: #252936;
-    --border-hover: #3d4358;
-    --pill: #1a1d27;
+    --border-hover: #3f465c;
   }}
   html.light {{
     --bg: #f4f5f8;
@@ -48,7 +67,6 @@ pub fn render(
     --card-hover: #f8f9fc;
     --border: #dcdfe8;
     --border-hover: #b4bacb;
-    --pill: #e9ecf2;
   }}
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{
@@ -59,24 +77,39 @@ pub fn render(
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 72px 24px 28px;
+    padding: 52px 24px 28px;
   }}
-  .top-pill {{
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    background: var(--pill);
+  .stats-strip {{
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    max-width: 660px;
+    margin-bottom: 36px;
+  }}
+  .stat-box {{
+    flex: 1 1 145px;
+    background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 20px;
-    padding: 5px 12px;
-    font-size: 12px;
-    color: var(--muted);
-    margin-bottom: 18px;
+    border-radius: 12px;
+    padding: 13px 16px;
     text-decoration: none;
-  }}
-  .top-pill:hover {{
-    border-color: var(--border-hover);
     color: var(--fg);
+  }}
+  .stat-box:hover {{
+    border-color: var(--border-hover);
+    background: var(--card-hover);
+  }}
+  .stat-val {{
+    font-size: 21px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 2px;
+  }}
+  .stat-lbl {{
+    font-size: 11.5px;
+    color: var(--muted);
   }}
   .brand {{
     display: flex;
@@ -86,7 +119,7 @@ pub fn render(
     margin-bottom: 6px;
   }}
   .logo {{
-    font-size: 38px;
+    font-size: 36px;
     font-weight: 700;
     letter-spacing: -1px;
     color: var(--fg);
@@ -94,12 +127,12 @@ pub fn render(
   .tagline {{
     color: var(--muted);
     font-size: 13.5px;
-    margin-bottom: 30px;
+    margin-bottom: 26px;
     text-align: center;
   }}
   .search-form {{
     width: 100%;
-    max-width: 580px;
+    max-width: 600px;
     display: flex;
     align-items: center;
     background: var(--card);
@@ -162,78 +195,58 @@ pub fn render(
     color: var(--muted);
     margin: 4px 0 10px 4px;
   }}
-  .cards {{
+  .quick-grid {{
     display: flex;
     flex-wrap: wrap;
-    width: 100%;
-    max-width: 672px;
-    margin: -6px -6px 22px -6px;
-  }}
-  .card {{
-    flex: 1 1 150px;
-    margin: 6px;
-    padding: 15px 15px;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    text-decoration: none;
-    color: var(--fg);
-    display: flex;
-    flex-direction: column;
-  }}
-  .card:hover {{
-    background: var(--card-hover);
-    border-color: var(--border-hover);
-  }}
-  .card-top {{
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 10px;
-    color: var(--muted);
-  }}
-  .card-title {{
-    font-size: 13.5px;
-    font-weight: 600;
-    margin-bottom: 3px;
-  }}
-  .card-desc {{
-    font-size: 12px;
-    color: var(--muted);
-  }}
-  .quick-links {{
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    gap: 10px;
     width: 100%;
     max-width: 660px;
+    margin-bottom: 24px;
   }}
-  .qlink {{
-    display: inline-flex;
+  .site-tile {{
+    flex: 1 1 150px;
+    display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 13px;
+    gap: 11px;
+    padding: 12px 14px;
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 9px;
+    border-radius: 11px;
     color: var(--fg);
     text-decoration: none;
-    font-size: 12.5px;
-    font-weight: 500;
   }}
-  .qlink:hover {{
+  .site-tile:hover {{
     background: var(--card-hover);
     border-color: var(--border-hover);
   }}
-  .qdot {{
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--muted);
+  .site-badge {{
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--fg);
+    flex-shrink: 0;
+  }}
+  .site-info {{
+    overflow: hidden;
+  }}
+  .site-name {{
+    font-size: 13px;
+    font-weight: 600;
+  }}
+  .site-domain {{
+    font-size: 11px;
+    color: var(--muted);
   }}
   .footer {{
     margin-top: auto;
-    padding-top: 40px;
+    padding-top: 32px;
     font-size: 12px;
     color: var(--muted);
     display: flex;
@@ -250,10 +263,24 @@ pub fn render(
 </style>
 </head>
 <body>
-  <a class="top-pill" href="kestrel://settings">
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-    <span>{shield_status}</span>
-  </a>
+  <div class="stats-strip">
+    <a class="stat-box" href="kestrel://settings">
+      <div class="stat-val">{total_blocked}</div>
+      <div class="stat-lbl">{blocked_lbl} ({shield_status})</div>
+    </a>
+    <a class="stat-box" href="kestrel://settings">
+      <div class="stat-val">{data_saved}</div>
+      <div class="stat-lbl">{saved_data_lbl}</div>
+    </a>
+    <a class="stat-box" href="kestrel://bookmarks">
+      <div class="stat-val">{bookmark_count}</div>
+      <div class="stat-lbl">{bookmarks_card} (Ctrl+B)</div>
+    </a>
+    <a class="stat-box" href="kestrel://history">
+      <div class="stat-val">{history_count}</div>
+      <div class="stat-lbl">{history_card} (Ctrl+H)</div>
+    </a>
+  </div>
 
   <div class="brand">
     <div class="logo">Kestrel</div>
@@ -273,46 +300,46 @@ pub fn render(
     </button>
   </form>
 
-  <div class="section-label">{workspace_lbl}</div>
-  <div class="cards">
-    <a class="card" href="kestrel://bookmarks">
-      <div class="card-top">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
-        <span class="kbd-hint">Ctrl+B</span>
-      </div>
-      <div class="card-title">{bookmarks_card}</div>
-      <div class="card-desc">{bookmark_count} {saved_lbl}</div>
-    </a>
-    <a class="card" href="kestrel://history">
-      <div class="card-top">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        <span class="kbd-hint">Ctrl+H</span>
-      </div>
-      <div class="card-title">{history_card}</div>
-      <div class="card-desc">{history_count} {visited_lbl}</div>
-    </a>
-    <a class="card" href="kestrel://settings">
-      <div class="card-top">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        <span class="kbd-hint">Ctrl+,</span>
-      </div>
-      <div class="card-title">{settings_card}</div>
-      <div class="card-desc">{settings_desc}</div>
-    </a>
-  </div>
-
   <div class="section-label">{quick_lbl}</div>
-  <div class="quick-links">
-    <a class="qlink" href="https://github.com"><span class="qdot"></span>GitHub</a>
-    <a class="qlink" href="https://duckduckgo.com"><span class="qdot"></span>DuckDuckGo</a>
-    <a class="qlink" href="https://en.wikipedia.org"><span class="qdot"></span>Wikipedia</a>
-    <a class="qlink" href="https://news.ycombinator.com"><span class="qdot"></span>Hacker News</a>
-    <a class="qlink" href="https://vnexpress.net"><span class="qdot"></span>VnExpress</a>
-    <a class="qlink" href="https://servo.org"><span class="qdot"></span>Servo.org</a>
+  <div class="quick-grid">
+    <a class="site-tile" href="https://github.com">
+      <div class="site-badge">GH</div>
+      <div class="site-info"><div class="site-name">GitHub</div><div class="site-domain">github.com</div></div>
+    </a>
+    <a class="site-tile" href="https://search.brave.com">
+      <div class="site-badge">BR</div>
+      <div class="site-info"><div class="site-name">Brave Search</div><div class="site-domain">search.brave.com</div></div>
+    </a>
+    <a class="site-tile" href="https://duckduckgo.com">
+      <div class="site-badge">DD</div>
+      <div class="site-info"><div class="site-name">DuckDuckGo</div><div class="site-domain">duckduckgo.com</div></div>
+    </a>
+    <a class="site-tile" href="https://vnexpress.net">
+      <div class="site-badge">VN</div>
+      <div class="site-info"><div class="site-name">VnExpress</div><div class="site-domain">vnexpress.net</div></div>
+    </a>
+    <a class="site-tile" href="https://en.wikipedia.org">
+      <div class="site-badge">W</div>
+      <div class="site-info"><div class="site-name">Wikipedia</div><div class="site-domain">wikipedia.org</div></div>
+    </a>
+    <a class="site-tile" href="https://news.ycombinator.com">
+      <div class="site-badge">YC</div>
+      <div class="site-info"><div class="site-name">Hacker News</div><div class="site-domain">news.ycombinator.com</div></div>
+    </a>
+    <a class="site-tile" href="https://www.rust-lang.org">
+      <div class="site-badge">RS</div>
+      <div class="site-info"><div class="site-name">Rust</div><div class="site-domain">rust-lang.org</div></div>
+    </a>
+    <a class="site-tile" href="kestrel://settings">
+      <div class="site-badge">⚙</div>
+      <div class="site-info"><div class="site-name">{settings_card}</div><div class="site-domain">kestrel://settings</div></div>
+    </a>
   </div>
 
   <div class="footer">
     <span>Kestrel Browser</span>
+    <span>·</span>
+    <a href="kestrel://settings">{settings_card}</a>
     <span>·</span>
     <a href="kestrel://about">{about_lbl}</a>
   </div>
@@ -357,25 +384,25 @@ pub fn render(
         lang = lang,
         theme_class = theme_class,
         title = t("New Tab", "Tab mới"),
+        total_blocked = total_blocked,
+        blocked_lbl = t("Ads & Trackers Blocked", "Quảng cáo & Tracker đã chặn"),
+        data_saved = data_saved_str,
+        saved_data_lbl = t("Est. Data Saved", "Dung lượng tiết kiệm"),
         tagline = t(
-            "Lightweight, local-first web browser built on Rust & Servo",
-            "Trình duyệt nhẹ, ưu tiên quyền riêng tư trên nền Rust & Servo"
+            "Fast, private web browser built on Rust & Servo",
+            "Trình duyệt nhanh và riêng tư trên nền Rust & Servo"
         ),
         search_placeholder = t(
             "Search the web or type a URL...",
             "Tìm kiếm trên web hoặc nhập địa chỉ URL..."
         ),
-        workspace_lbl = t("Browser", "Trình duyệt"),
         bookmarks_card = t("Bookmarks", "Dấu trang"),
         bookmark_count = bookmark_count,
-        saved_lbl = t("saved pages", "trang đã lưu"),
         history_card = t("History", "Lịch sử"),
         history_count = history_count,
-        visited_lbl = t("visited pages", "trang đã xem"),
         settings_card = t("Settings", "Cài đặt"),
-        settings_desc = t("Theme, search & privacy", "Giao diện, tìm kiếm & bảo mật"),
         quick_lbl = t("Quick Access", "Truy cập nhanh"),
-        about_lbl = t("About Kestrel", "Giới thiệu"),
+        about_lbl = t("About", "Giới thiệu"),
         shield_status = shield_status,
         shim = NAV_SHIM,
     )
