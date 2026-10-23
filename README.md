@@ -1,14 +1,12 @@
-<div align="center">
-
 # Kestrel Browser
 
-**A lightweight, pure-Rust, zero-telemetry web browser for Linux — built on the Servo engine.**
+**A lightweight, pure-Rust, zero-telemetry web browser for Linux — built on the Servo 0.6 engine.**
 
 [![CI Build](https://github.com/LocShadowVN/kestrel-browser/actions/workflows/ci.yml/badge.svg)](https://github.com/LocShadowVN/kestrel-browser/actions/workflows/ci.yml)
 [![Release](https://github.com/LocShadowVN/kestrel-browser/actions/workflows/release.yml/badge.svg)](https://github.com/LocShadowVN/kestrel-browser/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg?style=flat-square)](LICENSE)
 [![Platform: Linux x86_64](https://img.shields.io/badge/platform-Linux%20x86__64-lightgrey.svg?style=flat-square)](#system-requirements)
-[![Engine: Servo](https://img.shields.io/badge/engine-Servo-orange.svg?style=flat-square)](https://servo.org/)
+[![Engine: Servo 0.6](https://img.shields.io/badge/engine-Servo%200.6-orange.svg?style=flat-square)](https://servo.org/)
 [![Adblock: Brave adblock-rust](https://img.shields.io/badge/shields-adblock--rust-black.svg?style=flat-square)](https://github.com/brave/adblock-rust)
 
 [**English**](#english) · [**Tiếng Việt**](#tiếng-việt)
@@ -38,9 +36,9 @@
 
 ### Overview
 
-**Kestrel** is an independent, privacy-first Linux web browser written entirely in **Rust**. It pairs a clean, responsive **GTK4** native interface with the next-generation **[Servo](https://servo.org/)** layout engine and **[Brave's `adblock-rust`](https://github.com/brave/adblock-rust)** filtering engine.
+**Kestrel** is an independent, privacy-first Linux web browser written entirely in **Rust**. It pairs a clean, responsive **GTK4** native interface with the **[Servo 0.6](https://servo.org/)** layout engine (featuring native CSS Grid support and WebRender GPU rendering) and **[Brave's `adblock-rust`](https://github.com/brave/adblock-rust)** filtering engine.
 
-Designed for speed, low memory overhead, and strict local privacy, Kestrel runs with zero telemetry, zero background cloud services, and hardware-accelerated WebRender graphics.
+Designed for speed, low memory overhead, and strict local privacy, Kestrel runs with zero telemetry, zero background cloud services, and dual-layer ad & tracker blocking.
 
 ---
 
@@ -100,7 +98,7 @@ Designed for speed, low memory overhead, and strict local privacy, Kestrel runs 
 
 ### Architecture
 
-Kestrel uses a downstream fork of [`nacho/servo-gtk`](https://github.com/nacho/servo-gtk) maintained at [`LocShadowVN/servo-gtk`](https://github.com/LocShadowVN/servo-gtk). The fork exposes a `WebViewDelegate::load_web_resource` hook inside the Servo runner subprocess.
+Kestrel uses a downstream fork of [`nacho/servo-gtk`](https://github.com/nacho/servo-gtk) maintained at [`LocShadowVN/servo-gtk`](https://github.com/LocShadowVN/servo-gtk). The fork embeds **Servo 0.6** and exposes a `WebViewDelegate::load_web_resource` hook inside the Servo runner subprocess.
 
 Because the `adblock-rust` engine is deserialized directly inside the runner subprocess from a pre-compiled binary blob (`~/.local/share/kestrel-browser/adblock_net_v3.blob`), every subresource request is inspected via an in-process function call without IPC round-trip latency.
 
@@ -113,8 +111,8 @@ Because the `adblock-rust` engine is deserialized directly inside the runner sub
 └───────────────┬──────────────────────────────────────▲───────────────┘
                 │ IPC (Commands, Blob, UserScripts)    │ Events (URI, Title, Blocked Hits)
 ┌───────────────▼──────────────────────────────────────┴───────────────┐
-│ Servo Runner Subprocess (servo-gtk)                                  │
-│  ├── Servo Layout, WebRender GPU & SpiderMonkey JS Engine            │
+│ Servo Runner Subprocess (servo-gtk · Servo 0.6)                      │
+│  ├── Servo Layout (CSS Grid), WebRender GPU & SpiderMonkey JS        │
 │  ├── WebViewDelegate::load_web_resource ──► adblock-rust Engine      │
 │  └── UserContentManager (Polyfills v5 & Active DOM Ad Scrubber)      │
 └──────────────────────────────────────────────────────────────────────┘
@@ -155,7 +153,7 @@ kestrel-browser/
 
 ### Web Compatibility Layer (Polyfills v5)
 
-Servo is rapidly evolving, so some modern JavaScript and DOM APIs expected by production SPAs (React, Next.js, Vue, Svelte, Radix UI) are not yet natively exposed. Kestrel injects a strictly **feature-detected** (`typeof ... === 'undefined'`) compatibility layer via `UserContentManager` that never overrides native Servo implementations:
+While **Servo 0.6** natively supports CSS Grid, `@property`, `touch-action`, and `animation-composition`, some modern JavaScript and DOM APIs expected by production SPAs (React, Next.js, Vue, Svelte, Radix UI) are still evolving upstream. Kestrel injects a strictly **feature-detected** (`typeof ... === 'undefined'`) compatibility layer via `UserContentManager` that never overrides native Servo implementations:
 
 - **Active Cosmetic & DOM Ad Scrubber**: Injects cosmetic filter rules and collapses empty ad containers and third-party ad iframes/scripts while reporting blocked elements back to Kestrel Shields.
 - **Deduplicated Layout & Viewport Observers**: Lightweight `ResizeObserver`, `IntersectionObserver` (enables lazy-loaded images and infinite scroll without layout thrashing), `PerformanceObserver`, and `window.visualViewport`.
@@ -234,7 +232,7 @@ cargo test --workspace
 |---|---|---|
 | **Phase 0** | Reproducible CI build & dependency pinning | Completed |
 | **Phase 1** | Core GTK4 browser, tabs, SQLite WAL storage & internal pages | Completed |
-| **Phase 1.5** | Web Compatibility JS/DOM Polyfill Suite (v5) | Completed |
+| **Phase 1.5** | Web Compatibility JS/DOM Polyfill Suite (v5) & Servo 0.6 | Completed |
 | **Phase 2** | Dual-layer Adblocking (`adblock-rust` + DOM Scrubber) & Shields UI | Completed |
 | **Phase 3** | Privacy & UX: Session restore, Find in Page (`Ctrl+F`), Page Zoom | Planned |
 | **Phase 4** | Rich Media: MSE video streaming, WebCodecs, WebRTC | Upstream Servo |
@@ -289,13 +287,14 @@ Licensed under the **GNU General Public License v3.0**. See [LICENSE](LICENSE) f
 - [Cài đặt & Build từ Source](#cài-đặt--build-từ-source)
 - [Lộ trình phát triển (Roadmap)](#lộ-trình-phát-triển-roadmap)
 - [Giới hạn đã biết](#giới-hạn-đã-biết)
-- [Đóng góp & Giấy phép](#đóng-góp--giấy-phép)
+- [Đóng góp](#đóng-góp)
+- [Ghi nhận & Giấy phép](#ghi-nhận--giấy-phép)
 
 ---
 
 ### Tổng quan
 
-**Kestrel** là trình duyệt web độc lập, nhẹ, thuần **Rust** và không thu thập dữ liệu (zero-telemetry) dành cho Linux. Kestrel kết hợp giao diện **GTK4** tối giản, phản hồi tức thì với nhân trình duyệt thế hệ mới **[Servo](https://servo.org/)** và bộ máy chặn quảng cáo **[`adblock-rust`](https://github.com/brave/adblock-rust)** của Brave.
+**Kestrel** là trình duyệt web độc lập, nhẹ, thuần **Rust** và không thu thập dữ liệu (zero-telemetry) dành cho Linux. Kestrel kết hợp giao diện **GTK4** tối giản, phản hồi tức thì với nhân trình duyệt thế hệ mới **[Servo 0.6](https://servo.org/)** (hỗ trợ sẵn CSS Grid, tăng tốc phần cứng WebRender GPU) và bộ máy chặn quảng cáo **[`adblock-rust`](https://github.com/brave/adblock-rust)** của Brave.
 
 ---
 
@@ -305,6 +304,7 @@ Licensed under the **GNU General Public License v3.0**. See [LICENSE](LICENSE) f
   - Hệ thống biểu tượng vector SVG đơn sắc có bộ nhớ đệm `gdk::Texture` giúp render mượt mà, tự động điều chỉnh độ tương phản sắc nét ở cả **Chế độ Tối (Dark Mode)** và **Chế độ Sáng (Light Mode)**.
   - Thanh tab cuộn ngang mượt mà, hỗ trợ đóng tab bằng **chuột giữa (Middle-click)** hoặc `Ctrl+W`, đồng bộ tiêu đề cửa sổ theo thời gian thực.
   - Hỗ trợ song ngữ **Tiếng Anh & Tiếng Việt** chuyển đổi trực tiếp không cần khởi động lại.
+  - Thanh tiến trình tải trang (Progress Bar 2px) mượt mà.
 - **Thanh địa chỉ Omnibox hợp nhất**:
   - Biểu tượng trạng thái bảo mật trực quan (Khóa `HTTPS`, cảnh báo `HTTP`, huy hiệu trang nội bộ `Kestrel`).
   - Tích hợp **Nút ngôi sao Bookmark (`Ctrl+D`)** và **Khiên chắn Kestrel Shields** ngay bên trong thanh địa chỉ.
@@ -354,29 +354,80 @@ Licensed under the **GNU General Public License v3.0**. See [LICENSE](LICENSE) f
 
 ### Kiến trúc hệ thống
 
-Kestrel sử dụng bản fork của [`nacho/servo-gtk`](https://github.com/nacho/servo-gtk) tại [`LocShadowVN/servo-gtk`](https://github.com/LocShadowVN/servo-gtk). Bản fork bổ sung hook `WebViewDelegate::load_web_resource` để kiểm tra và chặn các request quảng cáo/tracker ngay trước khi Servo gửi đi.
+Kestrel sử dụng bản fork của [`nacho/servo-gtk`](https://github.com/nacho/servo-gtk) được duy trì tại [`LocShadowVN/servo-gtk`](https://github.com/LocShadowVN/servo-gtk). Bản fork tích hợp nhân **Servo 0.6** và mở rộng hook `WebViewDelegate::load_web_resource` bên trong tiến trình con Servo runner.
 
-Nhờ nạp trực tiếp `adblock_net_v3.blob` vào tiến trình con Servo runner và kết hợp tầng quét DOM trong `UserContentManager`, Kestrel vừa chặn đứng request ở tầng mạng vừa thu gọn sạch sẽ các khung quảng cáo trên giao diện trang web.
+Nhờ nạp trực tiếp `adblock_net_v3.blob` vào tiến trình con Servo runner và kết hợp tầng quét DOM trong `UserContentManager`, mỗi request tài nguyên phụ đều được kiểm tra bằng lời gọi hàm trực tiếp trong bộ nhớ mà không tốn chi phí truyền thông liên tiến trình (IPC).
+
+```text
+┌──────────────────────────────────────────────────────────────────────┐
+│ Tiến trình GTK4 chính (kestrel)                                      │
+│  ├── Giao diện Chrome (TabBar, Toolbar, Omnibox, Shields, Popovers)  │
+│  ├── Lưu trữ SQLite WAL (kestrel.sqlite: History, Bookmarks, Config) │
+│  └── Bộ biên dịch & Lưu đệm Adblock nguyên tử (adblock_net_v3.blob)  │
+└───────────────┬──────────────────────────────────────▲───────────────┘
+                │ IPC (Lệnh điều khiển, Blob, Script)  │ Sự kiện (URI, Title, Số lượng chặn)
+┌───────────────▼──────────────────────────────────────┴───────────────┐
+│ Tiến trình con Servo Runner (servo-gtk · Servo 0.6)                  │
+│  ├── Servo Layout (CSS Grid), WebRender GPU & SpiderMonkey JS        │
+│  ├── WebViewDelegate::load_web_resource ──► adblock-rust Engine      │
+│  └── UserContentManager (Polyfills v5 & Bộ quét quảng cáo DOM)       │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+#### Cấu trúc thư mục (Repository Structure)
+
+```text
+kestrel-browser/
+├── shared/                     # Mô hình dữ liệu dùng chung (HistoryRecord, BookmarkRecord, AppConfig)
+├── src-servo/                  # Crate thực thi chính của trình duyệt
+│   ├── build.rs                # Tải và lưu đệm danh sách bộ lọc quảng cáo lúc build
+│   └── src/
+│       ├── main.rs             # Điểm vào ứng dụng, cấu hình GPU & khởi chạy Servo runner
+│       ├── app.rs              # Vòng đời ứng dụng GTK4
+│       ├── adblock_rules.rs    # Lọc quy tắc tầng mạng & lưu đệm nhị phân nguyên tử
+│       ├── chrome/             # Các thành phần giao diện GTK4 native
+│       │   ├── icons.rs        # Hệ thống icon vector SVG đơn sắc kèm bộ nhớ đệm Texture
+│       │   ├── style.rs        # CSS toàn cục (Giao diện Dark & Light thích ứng)
+│       │   ├── window.rs       # MainWindow, quản lý trạng thái tab, IPC & phím tắt
+│       │   ├── tabbar.rs       # Thanh tab cuộn ngang & đồng bộ trang động
+│       │   ├── tab_widget.rs   # Widget từng tab hỗ trợ đóng bằng chuột giữa
+│       │   ├── toolbar.rs      # Thanh điều hướng, thanh tiến trình & menu chính
+│       │   ├── omnibox.rs      # Huy hiệu bảo mật, ô nhập URL, ngôi sao & khiên Shields
+│       │   └── adblock_button.rs # Nút Kestrel Shields & popover thống kê trực tiếp
+│       ├── compat/
+│       │   └── polyfills.rs    # Bộ tương thích Web (Polyfills v5) & Quét quảng cáo DOM
+│       ├── engine/
+│       │   └── navigation.rs   # Chuẩn hóa URL, nhận diện localhost/IP & định tuyến tìm kiếm
+│       ├── internal_pages/     # Các trang nội bộ: kestrel://home, bookmarks, history, settings
+│       ├── storage/
+│       │   └── database.rs     # Tầng lưu trữ cục bộ SQLite (chế độ WAL)
+│       └── util/               # Bộ nhớ đệm cấu hình & ghi log
+└── .github/workflows/          # Pipeline CI build & đóng gói phát hành tự động (.deb)
+```
 
 ---
 
 ### Tầng tương thích Web (Polyfills v5)
 
-Để các trang web hiện đại (React, Next.js, Vue, Svelte, Radix UI) vận hành ổn định trên Servo, Kestrel tự động tiêm bộ polyfill qua `UserContentManager` (chỉ kích hoạt khi phát hiện API chưa tồn tại):
+Dù **Servo 0.6** đã hỗ trợ gốc CSS Grid, `@property`, `touch-action` và `animation-composition`, một số API JavaScript/DOM hiện đại mà các ứng dụng SPA (React, Next.js, Vue, Svelte, Radix UI) yêu cầu vẫn đang được hoàn thiện ở thượng nguồn. Kestrel tự động tiêm bộ polyfill qua `UserContentManager` (chỉ kích hoạt khi phát hiện API chưa tồn tại, tuyệt đối không ghi đè hàm gốc của Servo):
 
-- **Quét & Thu gọn Quảng cáo (Active DOM Scrubber)**: Tự động ẩn các vùng chứa quảng cáo (Google Ads, Eclick, Admicro, Taboola...) và cập nhật bộ đếm Kestrel Shields.
+- **Quét & Thu gọn Quảng cáo (Active DOM Scrubber)**: Tự động ẩn các vùng chứa quảng cáo (Google Ads, Eclick, Admicro, Taboola...) và cập nhật trực tiếp bộ đếm Kestrel Shields.
 - **Observers & Viewport**: `ResizeObserver`, `IntersectionObserver` (đã khử trùng lặp, giúp hiển thị ảnh lazy-load mượt mà không gây nghẽn Layout), `PerformanceObserver`, `window.visualViewport`.
 - **Sao chép dữ liệu sâu**: `structuredClone()` hoàn chỉnh, hỗ trợ `Date`, `RegExp`, `Map`, `Set`, `ArrayBuffer`, `DataView`, `TypedArray` và xử lý tham chiếu vòng qua `WeakMap`.
 - **Hoạt ảnh & DOM**: `Element.prototype.animate()`, `getAnimations()`, `checkVisibility()`, `CSS.supports()`, `window.matchMedia`.
-- **Chuẩn JS ES2022–ES2024**: `toSorted()`, `toReversed()`, `toSpliced()`, `with()`, `Object.hasOwn()`, `Object.fromEntries()`, `Object.groupBy()`, `Map.groupBy()`, các phép toán tập hợp trên `Set`, `Promise.withResolvers()`, `Promise.allSettled()`, `Promise.any()`, `URL.canParse()`, `crypto.randomUUID()`.
+- **Chuẩn JS ES2022–ES2024**:
+  - Sao chép mảng không đột biến: `Array.prototype.toSorted()`, `toReversed()`, `toSpliced()`, `with()`.
+  - Gom nhóm & Chỉ mục: `Object.hasOwn()`, `Object.fromEntries()`, `Object.groupBy()`, `Map.groupBy()`, `Array/String/TypedArray.prototype.at()`, `findLast()`, `findLastIndex()`.
+  - Phép toán tập hợp ES2024: `Set.prototype.union()`, `intersection()`, `difference()`.
+  - Bất đồng bộ & Tiện ích: `Promise.withResolvers()`, `Promise.allSettled()`, `Promise.any()`, `AggregateError`, `queueMicrotask()`, `requestIdleCallback()`, `URL.canParse()`, `crypto.randomUUID()`.
 
 ---
 
 ### Yêu cầu hệ thống
 
 - **Hệ điều hành:** Linux `x86_64` (Ubuntu 22.04+, Debian 12+, Fedora 38+, Arch Linux)
-- **GPU:** Hỗ trợ OpenGL 3.3+ hoặc Vulkan
-- **GTK4:** Có sẵn trên hầu hết các bản phân phối Linux hiện đại (`>= 4.12`)
+- **GPU:** Hỗ trợ phần cứng OpenGL 3.3+ hoặc Vulkan (Intel, AMD Mesa hoặc NVIDIA rời)
+- **GTK4:** `libgtk-4-1` (`>= 4.12`)
 - **RAM:** Tối thiểu 4 GB khi sử dụng; khuyến nghị 8 GB trở lên khi biên dịch từ mã nguồn
 
 ---
@@ -394,13 +445,40 @@ kestrel
 
 #### Cách 2: Tự biên dịch từ mã nguồn
 
+1. **Cài đặt các gói phụ thuộc hệ thống (Ubuntu / Debian):**
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  build-essential cmake ninja-build python3 python3-pip \
+  pkg-config curl wget file clang llvm lld \
+  libssl-dev libgtk-4-dev libepoxy-dev \
+  libx11-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+  libfontconfig1-dev libfreetype6-dev libharfbuzz-dev \
+  libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
+  libgbm-dev libwayland-dev libxkbcommon-dev \
+  libsqlite3-dev protobuf-compiler
+```
+
+2. **Sao chép mã nguồn và biên dịch:**
+
 ```bash
 git clone https://github.com/LocShadowVN/kestrel-browser.git
 cd kestrel-browser
 cargo build --release
 ```
 
-File thực thi được tạo tại `target/release/kestrel`. Danh sách bộ lọc quảng cáo (EasyList, EasyPrivacy, Fanboy's Annoyances) sẽ tự động được tải về ở lần build đầu tiên và lưu đệm cho các lần build tiếp theo.
+File thực thi sẽ được tạo tại `target/release/kestrel`. Danh sách bộ lọc quảng cáo (EasyList, EasyPrivacy, Fanboy's Annoyances) được tự động tải về ở lần build đầu tiên và lưu đệm cho các lần build tiếp theo.
+
+3. **Chạy kiểm thử đơn vị (Unit tests):**
+
+```bash
+cargo test --workspace
+```
+
+> **Biến môi trường khi Build:**
+> - `KESTREL_REQUIRE_FILTERS=1`: Dừng build ngay nếu việc tải danh sách bộ lọc EasyList/EasyPrivacy/Fanboy thất bại (dùng trong pipeline phát hành chính thức).
+> - `KESTREL_REFRESH_FILTERS=1`: Buộc tải lại danh sách bộ lọc mới nhất ngay cả khi đã có sẵn trong bộ nhớ đệm `$OUT_DIR/kestrel_filters/`.
 
 ---
 
@@ -410,11 +488,11 @@ File thực thi được tạo tại `target/release/kestrel`. Danh sách bộ l
 |---|---|---|
 | **Phase 0** | Chuẩn hóa CI build & cố định phụ thuộc | Hoàn thành |
 | **Phase 1** | Trình duyệt GTK4 cơ bản, tab, SQLite WAL & các trang `kestrel://` | Hoàn thành |
-| **Phase 1.5** | Tầng tương thích Web (JS/DOM Polyfills v5) | Hoàn thành |
+| **Phase 1.5** | Tầng tương thích Web (JS/DOM Polyfills v5) & nâng cấp Servo 0.6 | Hoàn thành |
 | **Phase 2** | Chặn quảng cáo 2 tầng (`adblock-rust` + DOM Scrubber) & Kestrel Shields | Hoàn thành |
 | **Phase 3** | Khôi phục phiên (Session restore), Tìm trong trang (`Ctrl+F`), Phóng to/Thu nhỏ | Kế hoạch |
 | **Phase 4** | Đa phương tiện: Video MSE, WebCodecs, WebRTC | Đợi Servo upstream |
-| **Phase 5** | Đóng gói: `.deb` tự động, Flatpak, AUR | Đã có `.deb` |
+| **Phase 5** | Đóng gói: `.deb` tự động, Flatpak, Arch AUR | Đã có `.deb` |
 
 ---
 
@@ -425,14 +503,25 @@ Do nhân Servo đang trong quá trình phát triển tích cực, một số tí
 | Tính năng | Nguyên nhân kỹ thuật |
 |---|---|
 | Xem video YouTube chất lượng cao | Servo chưa hoàn thiện MSE (Media Source Extensions) |
-| Netflix, Spotify Web | Chưa hỗ trợ DRM (Widevine CDM) |
-| Google Meet, Microsoft Teams | Chưa có đầy đủ WebCodecs & WebRTC |
+| Netflix, Spotify Web | Chưa hỗ trợ DRM (Widevine CDM / EME) |
+| Google Meet, Microsoft Teams | Chưa có đầy đủ ngăn xếp WebCodecs & WebRTC |
 | Tiện ích mở rộng Chrome/Firefox | Servo chưa hỗ trợ WebExtensions API |
 
 ---
 
-### Đóng góp & Giấy phép
+### Đóng góp
 
-Mọi đóng góp (báo lỗi, kiểm thử trên các cấu hình GPU/Wayland/X11, mở rộng polyfill hoặc bộ lọc quảng cáo) đều được hoan nghênh.
+Mọi đóng góp, báo lỗi và Pull Request đều được hoan nghênh! Các hạng mục ưu tiên bao gồm:
+- Kiểm thử trên nhiều bản phân phối Linux, môi trường Wayland/X11 và cấu hình GPU lai (Hybrid GPU).
+- Mở rộng các polyfill đạt chuẩn và quy tắc ẩn quảng cáo trong `src-servo/src/compat/polyfills.rs`.
+- Phát triển các tính năng thuộc Giai đoạn 3 (khôi phục phiên, trình quản lý tải xuống, tìm kiếm trong trang).
+
+---
+
+### Ghi nhận & Giấy phép
+
+- **Servo Engine** được phát triển bởi [Igalia](https://www.igalia.com/) và cộng đồng Servo thuộc [Linux Foundation Europe](https://linuxfoundation.eu/).
+- **[`servo-gtk`](https://github.com/nacho/servo-gtk)** thượng nguồn được khởi tạo và duy trì bởi [Ignacio Casal Quinteiro (nacho)](https://github.com/nacho).
+- **[`adblock-rust`](https://github.com/brave/adblock-rust)** được phát triển bởi [Brave Software](https://brave.com/).
 
 Phát hành dưới giấy phép **GNU General Public License v3.0**. Xem chi tiết tại [LICENSE](LICENSE).
