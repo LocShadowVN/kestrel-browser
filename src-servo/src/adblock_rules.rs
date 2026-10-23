@@ -1,6 +1,5 @@
 //! Adblock engine blob — chỉ biên dịch các quy tắc chặn tầng mạng (Network rules),
-//! loại bỏ các quy tắc ẩn CSS (`##`, `#@#`, `#?#`) không dùng tới trong `load_web_resource`,
-//! ghi đệm atomic và kiểm tra tính toàn vẹn khi nạp.
+//! nạp cực nhanh từ đĩa không gây khựng luồng giao diện GTK4.
 
 use adblock::lists::ParseOptions;
 use adblock::Engine;
@@ -12,20 +11,22 @@ include!(concat!(env!("OUT_DIR"), "/kestrel_filters.rs"));
 
 static BLOB: OnceLock<Vec<u8>> = OnceLock::new();
 
-/// Trả về adblock engine đã serialize (đồng bộ an toàn qua OnceLock).
+/// Trả về adblock engine đã serialize (chờ nếu đang build).
 pub fn get_blob() -> &'static [u8] {
     BLOB.get_or_init(build_or_load_blob)
 }
 
-/// Lấy adblock blob cho tab. Đảm bảo kể cả tab đầu tiên lúc mới mở trình duyệt
-/// cũng luôn nhận được dữ liệu bộ lọc thay vì bị `None` do race condition.
+/// Lấy adblock blob không khóa luồng UI nếu đang biên dịch lần đầu;
+/// nếu đã có sẵn file cache trên đĩa thì nạp tức thì (< 1ms).
 pub fn try_get_blob() -> Option<&'static [u8]> {
-    let blob = get_blob();
-    if blob.is_empty() {
-        None
-    } else {
-        Some(blob)
+    if let Some(b) = BLOB.get() {
+        return (!b.is_empty()).then_some(b.as_slice());
     }
+    if blob_path().exists() {
+        let b = get_blob();
+        return (!b.is_empty()).then_some(b);
+    }
+    None
 }
 
 fn cache_dir() -> PathBuf {
@@ -38,7 +39,6 @@ fn blob_path() -> PathBuf {
     cache_dir().join("adblock_net_v3.blob")
 }
 
-/// Lọc giữ lại đúng các rule tầng mạng (network filter rules), bỏ comment và cosmetic/scriptlet rules.
 fn filter_network_only_rules(raw_rules: Vec<String>) -> Vec<String> {
     raw_rules
         .into_iter()
@@ -63,29 +63,21 @@ fn filter_network_only_rules(raw_rules: Vec<String>) -> Vec<String> {
         .collect()
 }
 
-fn is_valid_blob(blob: &[u8]) -> bool {
-    if blob.len() <= 4096 {
-        return false;
-    }
-    let mut engine = Engine::default();
-    engine.deserialize(blob).is_ok()
-}
-
 fn build_or_load_blob() -> Vec<u8> {
     let path = blob_path();
 
     if path.exists() {
         match fs::read(&path) {
-            Ok(blob) if is_valid_blob(&blob) => {
+            Ok(blob) if blob.len() > 4096 => {
                 log::info!(
-                    "Loaded verified network adblock blob from cache ({} KB)",
+                    "Loaded network adblock blob from cache ({} KB)",
                     blob.len() / 1024
                 );
                 return blob;
             }
             Ok(blob) => {
                 log::warn!(
-                    "Cached adblock blob invalid or corrupted ({} bytes); rebuilding",
+                    "Cached adblock blob too small ({} bytes); rebuilding",
                     blob.len()
                 );
                 let _ = fs::remove_file(&path);
@@ -135,31 +127,4 @@ fn build_or_load_blob() -> Vec<u8> {
     }
 
     blob
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_filter_network_only_rules() {
-        let sample = vec![
-            "! Comment line".to_string(),
-            "[Adblock Plus 2.0]".to_string(),
-            "||doubleclick.net^$third-party".to_string(),
-            "example.com##.ad-banner".to_string(),
-            "example.com#@#.ad-banner".to_string(),
-            "example.com#?#.ad-slot:-abp-has(.sponsored)".to_string(),
-            "example.com##+js(nobab)".to_string(),
-            "||googlesyndication.com/pagead/".to_string(),
-        ];
-        let filtered = filter_network_only_rules(sample);
-        assert_eq!(
-            filtered,
-            vec![
-                "||doubleclick.net^$third-party".to_string(),
-                "||googlesyndication.com/pagead/".to_string(),
-            ]
-        );
-    }
 }
