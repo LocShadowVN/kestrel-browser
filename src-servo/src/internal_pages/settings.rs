@@ -1,15 +1,32 @@
 //! Trang cài đặt nội bộ — kestrel://settings.
-//! Sử dụng hệ thống Segmented Pill Buttons & Interactive Cards thay thế hoàn toàn thẻ `<select>`
-//! (do Servo chưa hỗ trợ native dropdown cho `<select>`), tự động lưu ngay khi click.
 
 use crate::internal_pages::NAV_SHIM;
 
+#[allow(dead_code)]
 pub fn render(
     lang: &str,
     homepage: &str,
     search_engine: &str,
     dark: bool,
     adblock_level: u8,
+) -> String {
+    render_full(
+        lang,
+        homepage,
+        search_engine,
+        dark,
+        adblock_level,
+        shared::DEFAULT_USER_AGENT,
+    )
+}
+
+pub fn render_full(
+    lang: &str,
+    homepage: &str,
+    search_engine: &str,
+    dark: bool,
+    adblock_level: u8,
+    user_agent: &str,
 ) -> String {
     let vi = lang == "vi";
     let theme_class = if dark { "dark" } else { "light" };
@@ -28,6 +45,19 @@ pub fn render(
     let ddg_active = if search_engine.contains("duckduckgo.com") { " active" } else { "" };
     let google_active = if search_engine.contains("google.com") { " active" } else { "" };
     let bing_active = if search_engine.contains("bing.com") { " active" } else { "" };
+
+    let ua_chrome_active = if user_agent.contains("Chrome/") { " active" } else { "" };
+    let ua_ff_active = if user_agent.contains("Firefox/") && !user_agent.contains("Servo/") {
+        " active"
+    } else {
+        ""
+    };
+    let ua_safari_active = if user_agent.contains("Version/") && user_agent.contains("Safari/") {
+        " active"
+    } else {
+        ""
+    };
+    let ua_servo_active = if user_agent.contains("Servo/") { " active" } else { "" };
 
     let t = |en: &str, vn: &str| -> String {
         if vi { vn.to_string() } else { en.to_string() }
@@ -83,27 +113,17 @@ pub fn render(
     background: var(--bg); color: var(--fg); outline: none;
   }}
   input[type=text]:focus {{ border-color: var(--border-focus); }}
-
-  /* Segmented Button Group (Thay thế <select> hoạt động 100% trên Servo) */
-  .seg-group {{
-    display: flex; gap: 6px; flex-wrap: wrap;
-  }}
+  .seg-group {{ display: flex; gap: 6px; flex-wrap: wrap; }}
   .seg-btn {{
     padding: 8px 14px; font-size: 12.5px; font-weight: 600;
     border-radius: 8px; border: 1px solid var(--border);
     background: var(--card-alt); color: var(--muted); cursor: pointer;
   }}
-  .seg-btn:hover {{
-    border-color: var(--border-focus); color: var(--fg);
-  }}
+  .seg-btn:hover {{ border-color: var(--border-focus); color: var(--fg); }}
   .seg-btn.active {{
     background: var(--btn-bg); color: var(--btn-fg); border-color: var(--btn-bg);
   }}
-
-  /* Shields Option Cards */
-  .shield-cards {{
-    display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;
-  }}
+  .shield-cards {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }}
   .shield-card {{
     flex: 1 1 180px; text-align: left; padding: 12px 14px;
     border-radius: 10px; border: 1px solid var(--border);
@@ -115,7 +135,6 @@ pub fn render(
   }}
   .shield-card-title {{ font-size: 13px; font-weight: 700; margin-bottom: 3px; }}
   .shield-card-desc {{ font-size: 11.5px; opacity: 0.78; }}
-
   .presets {{ display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }}
   .actions {{ margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }}
   .btn-primary {{
@@ -129,7 +148,7 @@ pub fn render(
     background: var(--card); color: var(--fg);
   }}
   .btn-secondary:hover {{ border-color: var(--border-focus); }}
-  .status {{ font-size: 13px; font-weight: 500; color: var(--fg); min-height: 18px; }}
+  .status {{ font-size: 13px; font-weight: 600; color: var(--fg); min-height: 18px; }}
   .about-row {{
     display: flex; justify-content: space-between; align-items: center;
     padding: 12px 18px; font-size: 13.5px;
@@ -183,7 +202,7 @@ pub fn render(
 
     <h2>{privacy}</h2>
     <div class="field">
-      <label>{shields_label} <span class="badge">adblock-rust + DOM Scrubber</span></label>
+      <label>{shields_label} <span class="badge">adblock-rust + Anti-Adblock</span></label>
       <div class="hint">{shields_hint}</div>
       <div class="shield-cards" id="shields-group">
         <button type="button" class="shield-card{ab_0_active}" data-level="0">
@@ -199,6 +218,18 @@ pub fn render(
           <div class="shield-card-desc">Standard + Fanboy's Annoyances</div>
         </button>
       </div>
+    </div>
+
+    <div class="field">
+      <label for="user_agent">{ua_label} <span class="badge">{ua_badge}</span></label>
+      <div class="hint">{ua_hint}</div>
+      <div class="presets" id="ua-group">
+        <button type="button" class="seg-btn{ua_chrome_active}" data-ua="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36">Chrome (Default)</button>
+        <button type="button" class="seg-btn{ua_ff_active}" data-ua="Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0">Firefox</button>
+        <button type="button" class="seg-btn{ua_safari_active}" data-ua="Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15">Safari</button>
+        <button type="button" class="seg-btn{ua_servo_active}" data-ua="Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Servo/1.0 Firefox/128.0">Servo Native</button>
+      </div>
+      <input type="text" id="user_agent" name="user_agent" value="{ua_value}">
     </div>
 
     <h2>{general}</h2>
@@ -240,7 +271,7 @@ pub fn render(
   <h2 id="about">{about}</h2>
   <div class="about-card">
     <div class="about-row"><span>{version_label}</span><span class="badge">1.0.0-alpha</span></div>
-    <div class="about-row"><span>{engine_label}</span><span>Servo + adblock-rust</span></div>
+    <div class="about-row"><span>{engine_label}</span><span>Servo 0.6 + adblock-rust</span></div>
     <div class="about-row"><span>{license_label}</span><span>GPL-3.0</span></div>
     <div class="about-row"><span>{source_label}</span><a href="https://github.com/LocShadowVN/kestrel-browser">GitHub</a></div>
   </div>
@@ -259,6 +290,7 @@ pub fn render(
   var statusEl = document.getElementById('status');
   var searchInput = document.getElementById('search_engine');
   var homeInput = document.getElementById('homepage');
+  var uaInput = document.getElementById('user_agent');
 
   function showStatus(msg) {{
     if (!statusEl) return;
@@ -270,6 +302,7 @@ pub fn render(
       action: 'save-settings',
       homepage: (homeInput && homeInput.value.trim()) || 'kestrel://home',
       search_engine: (searchInput && searchInput.value.trim()) || 'https://search.brave.com/search?q=',
+      user_agent: (uaInput && uaInput.value.trim()) || '',
       language: state.language,
       dark_theme: state.dark_theme,
       adblock_level: state.adblock_level
@@ -280,7 +313,6 @@ pub fn render(
     }}
   }}
 
-  // 1. Chọn Giao diện Sáng / Tối
   document.querySelectorAll('#theme-group .seg-btn').forEach(function (btn) {{
     btn.addEventListener('click', function () {{
       document.querySelectorAll('#theme-group .seg-btn').forEach(function (b) {{ b.classList.remove('active'); }});
@@ -291,7 +323,6 @@ pub fn render(
     }});
   }});
 
-  // 2. Chọn Ngôn ngữ (Tự nạp lại trang sang ngôn ngữ mới)
   document.querySelectorAll('#lang-group .seg-btn').forEach(function (btn) {{
     btn.addEventListener('click', function () {{
       document.querySelectorAll('#lang-group .seg-btn').forEach(function (b) {{ b.classList.remove('active'); }});
@@ -301,7 +332,6 @@ pub fn render(
     }});
   }});
 
-  // 3. Chọn Cấp độ Kestrel Shields
   document.querySelectorAll('#shields-group .shield-card').forEach(function (card) {{
     card.addEventListener('click', function () {{
       document.querySelectorAll('#shields-group .shield-card').forEach(function (c) {{ c.classList.remove('active'); }});
@@ -311,7 +341,15 @@ pub fn render(
     }});
   }});
 
-  // 4. Chọn nhanh Công cụ tìm kiếm
+  document.querySelectorAll('#ua-group .seg-btn').forEach(function (btn) {{
+    btn.addEventListener('click', function () {{
+      document.querySelectorAll('#ua-group .seg-btn').forEach(function (b) {{ b.classList.remove('active'); }});
+      btn.classList.add('active');
+      if (uaInput) uaInput.value = btn.getAttribute('data-ua') || '';
+      pushSettings();
+    }});
+  }});
+
   document.querySelectorAll('#preset-group .seg-btn').forEach(function (btn) {{
     btn.addEventListener('click', function () {{
       document.querySelectorAll('#preset-group .seg-btn').forEach(function (b) {{ b.classList.remove('active'); }});
@@ -358,7 +396,7 @@ pub fn render(
         home_lbl = t("Home", "Trang chủ"),
         general = t("SEARCH & STARTUP", "TÌM KIẾM & KHỞI ĐỘNG"),
         appearance = t("APPEARANCE & LANGUAGE", "GIAO DIỆN & NGÔN NGỮ"),
-        privacy = t("KESTREL SHIELDS & PRIVACY", "KHIÊN CHẮN & QUYỀN RIÊNG TƯ"),
+        privacy = t("KESTREL SHIELDS & COMPATIBILITY", "KHIÊN CHẮN & TƯƠNG THÍCH WEB"),
         about = t("ABOUT KESTREL", "GIỚI THIỆU"),
         theme_label = t("Browser Theme", "Giao diện trình duyệt"),
         dark_btn = t("Dark", "Tối (Dark)"),
@@ -381,6 +419,13 @@ pub fn render(
         ab_off_desc = t("No filtering", "Không chặn mạng"),
         ab_std_title = t("Standard", "Tiêu chuẩn"),
         ab_agg_title = t("Aggressive", "Mạnh (Khuyên dùng)"),
+        ua_label = t("User-Agent Spoofing", "Giả lập định danh trình duyệt (User-Agent)"),
+        ua_badge = t("Web Compatibility", "Tương thích Web"),
+        ua_hint = t(
+            "Defaults to Desktop Chrome so websites serve full modern layouts (applies to new tabs).",
+            "Mặc định giả lập Chrome để các trang web trả về giao diện đầy đủ (áp dụng cho tab mới)."
+        ),
+        ua_value = escape(user_agent),
         homepage_label = t("Homepage URL", "Địa chỉ trang chủ"),
         homepage_hint = t(
             "Opened when clicking Home or opening a new tab (Ctrl+T).",
@@ -414,6 +459,10 @@ pub fn render(
         ab_0_active = ab_0_active,
         ab_1_active = ab_1_active,
         ab_2_active = ab_2_active,
+        ua_chrome_active = ua_chrome_active,
+        ua_ff_active = ua_ff_active,
+        ua_safari_active = ua_safari_active,
+        ua_servo_active = ua_servo_active,
         brave_active = brave_active,
         ddg_active = ddg_active,
         google_active = google_active,
