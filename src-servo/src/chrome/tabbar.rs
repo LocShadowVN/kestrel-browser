@@ -1,4 +1,4 @@
-//! TabBar — Quản lý các tab bằng `tab_id: u64` duy nhất và tra cứu động `notebook.page_num`.
+//! TabBar — Quản lý các tab bằng `tab_id: u64` duy nhất, nút `+` nằm sát bên cạnh tab như Brave/Chrome.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -33,8 +33,16 @@ impl TabBar {
 
         let tabs_area = GtkBox::new(Orientation::Horizontal, 2);
         tabs_area.add_css_class("kestrel-tabs-area");
-        tabs_area.set_hexpand(true);
+        tabs_area.set_hexpand(false);
         tabs_area.set_vexpand(false);
+
+        let new_tab_button =
+            icons::svg_button(icons::PLUS, "tab-new-symbolic", 16, "New Tab (Ctrl+T)");
+        new_tab_button.add_css_class("kestrel-new-tab-button");
+        new_tab_button.set_vexpand(false);
+
+        // Đặt nút `+` ngay trong vùng tab ở phía bên trái (đi liền ngay sau các tab)
+        tabs_area.append(&new_tab_button);
 
         let scroll = ScrolledWindow::builder()
             .hscrollbar_policy(PolicyType::Automatic)
@@ -45,13 +53,7 @@ impl TabBar {
         scroll.add_css_class("kestrel-tabs-scroll");
         scroll.set_child(Some(&tabs_area));
 
-        let new_tab_button =
-            icons::svg_button(icons::PLUS, "tab-new-symbolic", 16, "New Tab (Ctrl+T)");
-        new_tab_button.add_css_class("kestrel-new-tab-button");
-        new_tab_button.set_vexpand(false);
-
         strip.append(&scroll);
-        strip.append(&new_tab_button);
 
         let notebook = Notebook::new();
         notebook.set_vexpand(true);
@@ -97,8 +99,10 @@ impl TabBar {
         };
 
         self.tabs_area.append(tab.widget());
+        // Giữ nút `+` luôn nằm ngay sát sau tab cuối cùng ở bên trái
+        self.tabs_area
+            .reorder_child_after(&self.new_tab_button, Some(tab.widget()));
 
-        // Đẩy vào danh sách TRƯỚC khi gọi append_page vì append_page bắn sự kiện switch-page ngay lập tức
         self.tabs.borrow_mut().push(Rc::new(TabMeta {
             tab_id,
             widget: tab,
