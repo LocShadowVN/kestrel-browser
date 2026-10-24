@@ -11,7 +11,7 @@
 [![Engine: Servo 0.6](https://img.shields.io/badge/engine-Servo%200.6-orange.svg?style=flat-square)](https://servo.org/)
 [![Adblock: Brave adblock-rust](https://img.shields.io/badge/shields-adblock--rust-black.svg?style=flat-square)](https://github.com/brave/adblock-rust)
 
-[**English**](README-EN.md) · **Tiếng Việt**
+[**English**](README.md) · **Tiếng Việt**
 
 </div>
 
