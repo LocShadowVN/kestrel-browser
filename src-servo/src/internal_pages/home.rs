@@ -1,5 +1,5 @@
 //! Trang chủ nội bộ — kestrel://home.
-//! Thiết kế Dashboard kiểu Brave với thanh thống kê Shields trực quan và lối tắt truy cập nhanh.
+//! Thiết kế Dashboard kiểu Brave với thanh thống kê Shields trực quan và lối tắt Quick Access hoạt động tức thì.
 
 use crate::internal_pages::NAV_SHIM;
 
@@ -35,7 +35,6 @@ pub fn render_with_stats(
         _ => t("Standard", "Tiêu chuẩn"),
     };
 
-    // Ước tính băng thông tiết kiệm (~28 KB mỗi quảng cáo/tracker)
     let kb_saved = total_blocked.saturating_mul(28);
     let data_saved_str = if kb_saved >= 1024 {
         format!("{:.1} MB", (kb_saved as f64) / 1024.0)
@@ -96,6 +95,7 @@ pub fn render_with_stats(
     padding: 13px 16px;
     text-decoration: none;
     color: var(--fg);
+    cursor: pointer;
   }}
   .stat-box:hover {{
     border-color: var(--border-hover);
@@ -214,6 +214,7 @@ pub fn render_with_stats(
     border-radius: 11px;
     color: var(--fg);
     text-decoration: none;
+    cursor: pointer;
   }}
   .site-tile:hover {{
     background: var(--card-hover);
