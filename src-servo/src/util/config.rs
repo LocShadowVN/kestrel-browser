@@ -1,9 +1,10 @@
 //! Config — wrapper quanh Database, cache trong RAM và chuẩn hóa giá trị hợp lệ.
 
 use std::cell::RefCell;
+use std::env;
 use std::rc::Rc;
 
-use shared::AppConfig;
+use shared::{AppConfig, DEFAULT_USER_AGENT};
 
 use crate::storage::database::Database;
 
@@ -23,7 +24,7 @@ impl Config {
         }
         if let Some(v) = db.load_config_item("homepage") {
             let trimmed = v.trim();
-            if !trimmed.is_empty() {
+            if !trimmed.is_empty() && trimmed != "about:blank" {
                 cached.homepage = trimmed.to_string();
             }
         }
@@ -36,6 +37,15 @@ impl Config {
         if let Some(v) = db.load_config_item("adblock_level") {
             cached.adblock_level = v.parse::<u8>().unwrap_or(1).min(2);
         }
+        if let Some(v) = db.load_config_item("user_agent") {
+            let trimmed = v.trim();
+            if !trimmed.is_empty() {
+                cached.user_agent = trimmed.to_string();
+            }
+        }
+
+        env::set_var("KESTREL_USER_AGENT", &cached.user_agent);
+
         Self {
             db,
             cached: RefCell::new(cached),
@@ -62,11 +72,16 @@ impl Config {
         self.cached.borrow().adblock_level
     }
 
+    pub fn user_agent(&self) -> String {
+        self.cached.borrow().user_agent.clone()
+    }
+
     pub fn set_homepage(&self, value: &str) -> Result<(), String> {
-        let v = if value.trim().is_empty() {
+        let trimmed = value.trim();
+        let v = if trimmed.is_empty() || trimmed == "about:blank" {
             "kestrel://home"
         } else {
-            value.trim()
+            trimmed
         };
         self.db
             .save_config_item("homepage", v)
@@ -112,6 +127,20 @@ impl Config {
             .save_config_item("adblock_level", &l.to_string())
             .map_err(|e| e.to_string())?;
         self.cached.borrow_mut().adblock_level = l;
+        Ok(())
+    }
+
+    pub fn set_user_agent(&self, value: &str) -> Result<(), String> {
+        let v = if value.trim().is_empty() {
+            DEFAULT_USER_AGENT
+        } else {
+            value.trim()
+        };
+        self.db
+            .save_config_item("user_agent", v)
+            .map_err(|e| e.to_string())?;
+        self.cached.borrow_mut().user_agent = v.to_string();
+        env::set_var("KESTREL_USER_AGENT", v);
         Ok(())
     }
 }
