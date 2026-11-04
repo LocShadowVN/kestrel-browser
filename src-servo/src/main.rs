@@ -1,3 +1,4 @@
+// src-servo/src/main.rs
 mod adblock_rules;
 mod app;
 mod chrome;
@@ -11,17 +12,35 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
+/// Quét toàn bộ `/sys/class/drm/card*/device/vendor` để phát hiện hệ thống Hybrid GPU
+/// (iGPU Intel/AMD đi kèm dGPU NVIDIA hoặc AMD) bất kể thứ tự đánh số card của kernel.
 fn should_enable_dri_prime() -> bool {
-    let card0_vendor = fs::read_to_string("/sys/class/drm/card0/device/vendor")
-        .unwrap_or_default()
-        .trim()
-        .to_ascii_lowercase();
-    let card1_vendor = fs::read_to_string("/sys/class/drm/card1/device/vendor")
-        .unwrap_or_default()
-        .trim()
-        .to_ascii_lowercase();
+    let Ok(entries) = fs::read_dir("/sys/class/drm") else {
+        return false;
+    };
 
-    card0_vendor == "0x8086" && (card1_vendor == "0x1002" || card1_vendor == "0x10de")
+    let mut has_igpu = false;
+    let mut has_dgpu = false;
+
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if !name_str.starts_with("card") || name_str.contains('-') {
+            continue;
+        }
+
+        let vendor_path = entry.path().join("device/vendor");
+        if let Ok(vendor_raw) = fs::read_to_string(vendor_path) {
+            let vendor = vendor_raw.trim().to_ascii_lowercase();
+            match vendor.as_str() {
+                "0x8086" => has_igpu = true,
+                "0x10de" | "0x1002" => has_dgpu = true,
+                _ => {}
+            }
+        }
+    }
+
+    has_igpu && has_dgpu
 }
 
 /// Thiết lập biến môi trường GPU phần cứng và bộ đệm Shader
@@ -73,14 +92,27 @@ fn main() -> glib::ExitCode {
 
     log::info!("Kestrel Browser starting (Servo engine + Hardware GPU Acceleration)");
 
-    std::thread::spawn(|| {
-        let blob = adblock_rules::get_blob();
-        if blob.is_empty() {
-            log::warn!("Adblock blob empty; network adblock will be unavailable");
-        } else {
-            log::info!("Adblock blob ready ({} KB)", blob.len() / 1024);
-        }
-    });
+    std::thread::Builder::new()
+        .name("kestrel-adblock-compiler".into())
+        .spawn(|| {
+            let agg_blob = adblock_rules::get_blob_for_level(2);
+            if agg_blob.is_empty() {
+                log::warn!("Adblock blob empty; network adblock will be unavailable");
+            } else {
+                log::info!(
+                    "Adblock Aggressive blob ready ({} KB)",
+                    agg_blob.len() / 1024
+                );
+            }
+            let std_blob = adblock_rules::get_blob_for_level(1);
+            if !std_blob.is_empty() {
+                log::info!(
+                    "Adblock Standard blob ready ({} KB)",
+                    std_blob.len() / 1024
+                );
+            }
+        })
+        .ok();
 
     let app = app::KestrelApp::new();
     app.run()
