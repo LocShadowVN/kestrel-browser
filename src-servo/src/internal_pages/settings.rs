@@ -1,6 +1,7 @@
-//! Trang cài đặt nội bộ — kestrel://settings.
+// src-servo/src/internal_pages/settings.rs
+//! Trang cài đặt nội bộ — kestrel://settings & kestrel://about.
 
-use crate::internal_pages::NAV_SHIM;
+use crate::internal_pages::{escape_html, NAV_SHIM};
 
 #[allow(dead_code)]
 pub fn render(
@@ -29,6 +30,7 @@ pub fn render_full(
     user_agent: &str,
 ) -> String {
     let vi = lang == "vi";
+    let safe_lang = if vi { "vi" } else { "en" };
     let theme_class = if dark { "dark" } else { "light" };
 
     let en_active = if !vi { " active" } else { "" };
@@ -41,23 +43,48 @@ pub fn render_full(
     let ab_1_active = if adblock_level == 1 { " active" } else { "" };
     let ab_2_active = if adblock_level >= 2 { " active" } else { "" };
 
-    let brave_active = if search_engine.contains("brave.com") { " active" } else { "" };
-    let ddg_active = if search_engine.contains("duckduckgo.com") { " active" } else { "" };
-    let google_active = if search_engine.contains("google.com") { " active" } else { "" };
-    let bing_active = if search_engine.contains("bing.com") { " active" } else { "" };
+    let brave_active = if search_engine.contains("brave.com") {
+        " active"
+    } else {
+        ""
+    };
+    let ddg_active = if search_engine.contains("duckduckgo.com") {
+        " active"
+    } else {
+        ""
+    };
+    let google_active = if search_engine.contains("google.com") {
+        " active"
+    } else {
+        ""
+    };
+    let bing_active = if search_engine.contains("bing.com") {
+        " active"
+    } else {
+        ""
+    };
 
-    let ua_chrome_active = if user_agent.contains("Chrome/") { " active" } else { "" };
+    let ua_chrome_active = if user_agent.contains("Chrome/") {
+        " active"
+    } else {
+        ""
+    };
     let ua_ff_active = if user_agent.contains("Firefox/") && !user_agent.contains("Servo/") {
         " active"
     } else {
         ""
     };
-    let ua_safari_active = if user_agent.contains("Version/") && user_agent.contains("Safari/") {
+    let ua_safari_active =
+        if user_agent.contains("Version/") && user_agent.contains("Safari/") {
+            " active"
+        } else {
+            ""
+        };
+    let ua_servo_active = if user_agent.contains("Servo/") {
         " active"
     } else {
         ""
     };
-    let ua_servo_active = if user_agent.contains("Servo/") { " active" } else { "" };
 
     let t = |en: &str, vn: &str| -> String {
         if vi { vn.to_string() } else { en.to_string() }
@@ -114,7 +141,7 @@ pub fn render_full(
   }}
   input[type=text]:focus {{ border-color: var(--border-focus); }}
   .seg-group {{ display: flex; gap: 6px; flex-wrap: wrap; }}
-  .seg-btn {{
+  .seg-group .seg-btn, .presets .seg-btn {{
     padding: 8px 14px; font-size: 12.5px; font-weight: 600;
     border-radius: 8px; border: 1px solid var(--border);
     background: var(--card-alt); color: var(--muted); cursor: pointer;
@@ -269,7 +296,7 @@ pub fn render_full(
   </form>
 
   <h2 id="about">{about}</h2>
-  <div class="about-card">
+  <div class="about-card" id="about-card">
     <div class="about-row"><span>{version_label}</span><span class="badge">1.0.0-alpha</span></div>
     <div class="about-row"><span>{engine_label}</span><span>Servo 0.6 + adblock-rust</span></div>
     <div class="about-row"><span>{license_label}</span><span>GPL-3.0</span></div>
@@ -280,6 +307,10 @@ pub fn render_full(
 <script>{shim}</script>
 <script>
 (function () {{
+  var DEFAULT_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+  var DEFAULT_SEARCH = 'https://search.brave.com/search?q=';
+  var DEFAULT_HOME = 'kestrel://home';
+
   var state = {{
     language: '{lang}',
     dark_theme: {dark_js},
@@ -300,9 +331,9 @@ pub fn render_full(
   function pushSettings() {{
     var payload = {{
       action: 'save-settings',
-      homepage: (homeInput && homeInput.value.trim()) || 'kestrel://home',
-      search_engine: (searchInput && searchInput.value.trim()) || 'https://search.brave.com/search?q=',
-      user_agent: (uaInput && uaInput.value.trim()) || '',
+      homepage: (homeInput && homeInput.value.trim()) || DEFAULT_HOME,
+      search_engine: (searchInput && searchInput.value.trim()) || DEFAULT_SEARCH,
+      user_agent: (uaInput && uaInput.value.trim()) || DEFAULT_UA,
       language: state.language,
       dark_theme: state.dark_theme,
       adblock_level: state.adblock_level
@@ -369,8 +400,16 @@ pub fn render_full(
   var resetBtn = document.getElementById('reset-btn');
   if (resetBtn) {{
     resetBtn.addEventListener('click', function () {{
+      state.language = 'en';
+      state.dark_theme = true;
+      state.adblock_level = 1;
+      document.documentElement.className = 'dark';
+      if (homeInput) homeInput.value = DEFAULT_HOME;
+      if (searchInput) searchInput.value = DEFAULT_SEARCH;
+      if (uaInput) uaInput.value = DEFAULT_UA;
       if (window.__kestrelSend) {{
         window.__kestrelSend({{ action: 'reset-settings' }});
+        showStatus('{saved_msg}');
       }}
     }});
   }}
@@ -388,7 +427,7 @@ pub fn render_full(
 </script>
 </body>
 </html>"#,
-        lang = lang,
+        lang = safe_lang,
         theme_class = theme_class,
         dark_js = if dark { "true" } else { "false" },
         adblock_level = adblock_level,
@@ -425,19 +464,19 @@ pub fn render_full(
             "Defaults to Desktop Chrome so websites serve full modern layouts (applies to new tabs).",
             "Mặc định giả lập Chrome để các trang web trả về giao diện đầy đủ (áp dụng cho tab mới)."
         ),
-        ua_value = escape(user_agent),
+        ua_value = escape_html(user_agent),
         homepage_label = t("Homepage URL", "Địa chỉ trang chủ"),
         homepage_hint = t(
             "Opened when clicking Home or opening a new tab (Ctrl+T).",
             "Trang mở khi nhấn nút Home hoặc mở tab mới (Ctrl+T)."
         ),
-        homepage_value = escape(homepage),
+        homepage_value = escape_html(homepage),
         search_label = t("Search Engine", "Công cụ tìm kiếm"),
         search_hint = t(
             "Click a preset below or enter a custom query URL.",
             "Chọn nhanh bên dưới hoặc nhập URL tìm kiếm tùy chỉnh."
         ),
-        search_value = escape(search_engine),
+        search_value = escape_html(search_engine),
         clear_data_label = t("Browsing History", "Lịch sử duyệt web"),
         clear_data_hint = t(
             "Delete all recorded browsing history from local SQLite storage.",
@@ -469,12 +508,4 @@ pub fn render_full(
         bing_active = bing_active,
         shim = NAV_SHIM,
     )
-}
-
-fn escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
 }
