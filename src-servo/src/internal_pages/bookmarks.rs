@@ -1,6 +1,7 @@
+// src-servo/src/internal_pages/bookmarks.rs
 //! Trang bookmark nội bộ — kestrel://bookmarks.
 
-use crate::internal_pages::NAV_SHIM;
+use crate::internal_pages::{escape_html, sanitize_href, NAV_SHIM};
 
 pub fn render(records: &[(i64, String, String)], lang: &str, dark: bool) -> String {
     let vi = lang == "vi";
@@ -28,10 +29,14 @@ pub fn render(records: &[(i64, String, String)], lang: &str, dark: bool) -> Stri
   </button>
 </li>"#,
             id = id,
-            href = escape(&safe_url),
-            title = escape(display_title),
-            url_disp = escape(url),
-            search_text = escape(&format!("{} {}", display_title.to_lowercase(), url.to_lowercase())),
+            href = escape_html(&safe_url),
+            title = escape_html(display_title),
+            url_disp = escape_html(url),
+            search_text = escape_html(&format!(
+                "{} {}",
+                display_title.to_lowercase(),
+                url.to_lowercase()
+            )),
         ));
     }
 
@@ -145,9 +150,12 @@ pub fn render(records: &[(i64, String, String)], lang: &str, dark: bool) -> Stri
       var emptyEl = document.getElementById('bm-empty');
 
       function normalizeBookmarkUrl(raw) {{
-        var u = raw.trim();
+        var u = (raw || '').trim();
         if (!u) return '';
         var lower = u.toLowerCase();
+        if (lower.indexOf('javascript:') === 0 || lower.indexOf('data:') === 0 || lower.indexOf('vbscript:') === 0) {{
+          return '';
+        }}
         if (lower.indexOf('http://') === 0 || lower.indexOf('https://') === 0 || lower.indexOf('kestrel://') === 0) {{
           return u;
         }}
@@ -160,13 +168,41 @@ pub fn render(records: &[(i64, String, String)], lang: &str, dark: bool) -> Stri
         if (emptyEl) emptyEl.style.display = items.length === 0 ? 'block' : 'none';
       }}
 
+      function prependBookmarkDom(title, url) {{
+        if (!listEl) return;
+        var li = document.createElement('li');
+        li.className = 'item';
+        li.setAttribute('data-search', (title + ' ' + url).toLowerCase());
+
+        var a = document.createElement('a');
+        a.className = 'title';
+        a.href = url;
+        a.textContent = title;
+
+        var span = document.createElement('span');
+        span.className = 'url';
+        span.textContent = url;
+
+        var btn = document.createElement('button');
+        btn.className = 'remove';
+        btn.setAttribute('data-url', url);
+        btn.title = 'Remove';
+        btn.textContent = '✕';
+
+        li.appendChild(a);
+        li.appendChild(span);
+        li.appendChild(btn);
+        listEl.insertBefore(li, listEl.firstChild);
+        syncCount();
+      }}
+
       document.addEventListener('click', function (e) {{
         var btn = e.target.closest('.remove');
         if (!btn) return;
         e.preventDefault();
-        var id = parseInt(btn.getAttribute('data-id'), 10);
-        if (window.__kestrelSend) {{
-          window.__kestrelSend({{ action: 'remove-bookmark', id: id }});
+        var idAttr = btn.getAttribute('data-id');
+        if (idAttr && window.__kestrelSend) {{
+          window.__kestrelSend({{ action: 'remove-bookmark', id: parseInt(idAttr, 10) }});
         }}
         var li = btn.closest('.item');
         if (li) li.remove();
@@ -182,6 +218,7 @@ pub fn render(records: &[(i64, String, String)], lang: &str, dark: bool) -> Stri
           var url = normalizeBookmarkUrl(urlInput.value);
           if (!url) return;
           var title = titleInput.value.trim() || url;
+          prependBookmarkDom(title, url);
           if (window.__kestrelSend) {{
             window.__kestrelSend({{
               action: 'add-bookmark',
@@ -212,7 +249,7 @@ pub fn render(records: &[(i64, String, String)], lang: &str, dark: bool) -> Stri
   </script>
 </body>
 </html>"#,
-        lang = lang,
+        lang = escape_html(lang),
         theme_class = theme_class,
         heading = t("Bookmarks", "Trang đánh dấu"),
         count = records.len(),
@@ -226,27 +263,4 @@ pub fn render(records: &[(i64, String, String)], lang: &str, dark: bool) -> Stri
         empty_text = empty_text,
         shim = NAV_SHIM,
     )
-}
-
-fn sanitize_href(url: &str) -> String {
-    let trimmed = url.trim();
-    let lower = trimmed.to_ascii_lowercase();
-    if lower.starts_with("https://")
-        || lower.starts_with("http://")
-        || lower.starts_with("kestrel://")
-    {
-        trimmed.to_string()
-    } else if lower.starts_with("javascript:") || lower.starts_with("data:") || lower.starts_with("vbscript:") {
-        "about:blank".to_string()
-    } else {
-        format!("https://{}", trimmed)
-    }
-}
-
-fn escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
 }
