@@ -1,11 +1,13 @@
-//! Toolbar — Các nút điều hướng SVG + Omnibox (tích hợp sẵn Star & Shields) + Bookmarks + Menu.
+// src-servo/src/chrome/toolbar.rs
+//! Toolbar — Các nút điều hướng SVG + Omnibox (tích hợp sẵn Star, Zoom & Shields) + Find Bar (Ctrl+F) + Menu.
 
 use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use gtk4::{
-    Box as GtkBox, Button, Image, Label, MenuButton, Orientation, Popover, ProgressBar, Separator,
+    Box as GtkBox, Button, Entry, Image, Label, MenuButton, Orientation, Popover, ProgressBar,
+    Revealer, RevealerTransitionType, Separator,
 };
 
 use crate::chrome::adblock_button::{AdblockButton, AdblockLevel};
@@ -24,6 +26,11 @@ pub struct Toolbar {
     bookmarks_btn: Button,
     adblock: Rc<AdblockButton>,
     progress: ProgressBar,
+    find_revealer: Revealer,
+    find_entry: Entry,
+    find_prev: Button,
+    find_next: Button,
+    find_close: Button,
     popover: Popover,
     menu_new_tab: Button,
     menu_history: Button,
@@ -67,7 +74,7 @@ impl Toolbar {
         reload.set_tooltip_text(Some("Reload (Ctrl+R)"));
         reload.add_css_class("kestrel-toolbar-button");
 
-        let home = icons::svg_button(icons::HOME, "go-home-symbolic", 16, "Home");
+        let home = icons::svg_button(icons::HOME, "go-home-symbolic", 16, "Home (Alt+Home)");
         home.add_css_class("kestrel-toolbar-button");
 
         let adblock = Rc::new(AdblockButton::new(
@@ -75,7 +82,6 @@ impl Toolbar {
             on_adblock_change,
         ));
 
-        // Omnibox chứa luôn cả nút Star và nút Shields ở bên phải giống Brave
         let omnibox = Rc::new(Omnibox::new(&adblock));
 
         let bookmarks_btn = icons::svg_button(
@@ -159,8 +165,56 @@ impl Toolbar {
         progress.set_fraction(0.0);
         progress.set_visible(false);
 
+        // --- Thanh Tìm trong trang (Find in Page — Ctrl+F) ---
+        let find_revealer = Revealer::builder()
+            .transition_type(RevealerTransitionType::SlideDown)
+            .transition_duration(120)
+            .reveal_child(false)
+            .build();
+
+        let find_bar = GtkBox::new(Orientation::Horizontal, 6);
+        find_bar.add_css_class("kestrel-find-bar");
+
+        let find_icon = icons::svg_image(icons::SEARCH_ICON, "system-search-symbolic", 14);
+        let find_entry = Entry::builder()
+            .placeholder_text("Find in page...")
+            .width_chars(28)
+            .build();
+        find_entry.add_css_class("kestrel-find-entry");
+
+        let find_prev = Button::with_label("↑");
+        find_prev.add_css_class("kestrel-toolbar-button");
+        find_prev.set_tooltip_text(Some("Previous match (Shift+Enter)"));
+
+        let find_next = Button::with_label("↓");
+        find_next.add_css_class("kestrel-toolbar-button");
+        find_next.set_tooltip_text(Some("Next match (Enter)"));
+
+        let find_close = icons::svg_button(
+            icons::CLOSE,
+            "window-close-symbolic",
+            13,
+            "Close find bar (Esc)",
+        );
+        find_close.add_css_class("kestrel-toolbar-button");
+
+        {
+            let rev_c = find_revealer.clone();
+            find_close.connect_clicked(move |_| {
+                rev_c.set_reveal_child(false);
+            });
+        }
+
+        find_bar.append(&find_icon);
+        find_bar.append(&find_entry);
+        find_bar.append(&find_prev);
+        find_bar.append(&find_next);
+        find_bar.append(&find_close);
+        find_revealer.set_child(Some(&find_bar));
+
         wrapper.append(&container);
         wrapper.append(&progress);
+        wrapper.append(&find_revealer);
 
         Self {
             wrapper,
@@ -174,6 +228,11 @@ impl Toolbar {
             bookmarks_btn,
             adblock,
             progress,
+            find_revealer,
+            find_entry,
+            find_prev,
+            find_next,
+            find_close,
             popover,
             menu_new_tab,
             menu_history,
@@ -195,6 +254,68 @@ impl Toolbar {
 
     pub fn set_adblock_level(&self, level: u8) {
         self.adblock.set_level(level);
+    }
+
+    #[allow(dead_code)]
+    pub fn set_nav_state(&self, can_go_back: bool, can_go_forward: bool) {
+        self.back.set_sensitive(can_go_back);
+        self.forward.set_sensitive(can_go_forward);
+    }
+
+    #[allow(dead_code)]
+    pub fn show_find_bar(&self) {
+        self.find_revealer.set_reveal_child(true);
+        self.find_entry.grab_focus();
+        self.find_entry.select_region(0, -1);
+    }
+
+    #[allow(dead_code)]
+    pub fn hide_find_bar(&self) {
+        self.find_revealer.set_reveal_child(false);
+    }
+
+    #[allow(dead_code)]
+    pub fn toggle_find_bar(&self) {
+        if self.find_revealer.reveals_child() {
+            self.hide_find_bar();
+        } else {
+            self.show_find_bar();
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn on_find<F: Fn(&str, bool) + 'static>(&self, cb: F) {
+        let cb = Rc::new(cb);
+
+        {
+            let cb_c = cb.clone();
+            self.find_entry.connect_activate(move |entry| {
+                let text = entry.text().to_string();
+                cb_c(&text, false);
+            });
+        }
+        {
+            let cb_c = cb.clone();
+            let entry_c = self.find_entry.clone();
+            self.find_next.connect_clicked(move |_| {
+                let text = entry_c.text().to_string();
+                cb_c(&text, false);
+            });
+        }
+        {
+            let cb_c = cb.clone();
+            let entry_c = self.find_entry.clone();
+            self.find_prev.connect_clicked(move |_| {
+                let text = entry_c.text().to_string();
+                cb_c(&text, true);
+            });
+        }
+        {
+            let cb_c = cb;
+            self.find_close.connect_clicked(move |_| {
+                cb_c("", false);
+            });
+        }
     }
 
     pub fn set_loading(&self, loading: bool) {
