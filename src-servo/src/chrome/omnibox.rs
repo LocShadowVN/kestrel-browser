@@ -1,5 +1,6 @@
+// src-servo/src/chrome/omnibox.rs
 //! Omnibox — Thanh địa chỉ tích hợp:
-//! [ Icon bảo mật ] [ Ô nhập địa chỉ / tìm kiếm ] [ Ngôi sao Bookmark ] [ | ] [ Khiên Shields + Số đếm ]
+//! [ Icon bảo mật ] [ Ô nhập địa chỉ / tìm kiếm ] [ Zoom Badge (khi != 100%) ] [ Ngôi sao Bookmark ] [ | ] [ Khiên Shields + Số đếm ]
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -15,6 +16,7 @@ pub struct Omnibox {
     security_icon: Image,
     security_state: Cell<u8>,
     entry: Entry,
+    zoom_btn: Button,
     star_btn: Button,
     star_icon: Image,
     bookmarked: Cell<bool>,
@@ -37,6 +39,11 @@ impl Omnibox {
             .build();
         entry.add_css_class("kestrel-omnibox-entry");
 
+        let zoom_btn = Button::with_label("100%");
+        zoom_btn.add_css_class("kestrel-omnibox-zoom");
+        zoom_btn.set_tooltip_text(Some("Reset page zoom (Ctrl+0)"));
+        zoom_btn.set_visible(false);
+
         let star_icon = icons::svg_image(icons::STAR_OUTLINE, "non-starred-symbolic", 15);
         let star_btn = Button::new();
         star_btn.set_child(Some(&star_icon));
@@ -48,6 +55,7 @@ impl Omnibox {
 
         container.append(&security_icon);
         container.append(&entry);
+        container.append(&zoom_btn);
         container.append(&star_btn);
         container.append(&divider);
         container.append(adblock.widget());
@@ -57,6 +65,7 @@ impl Omnibox {
             security_icon,
             security_state: Cell::new(0),
             entry,
+            zoom_btn,
             star_btn,
             star_icon,
             bookmarked: Cell::new(false),
@@ -72,6 +81,21 @@ impl Omnibox {
 
     pub fn on_bookmark_toggle<F: Fn() + 'static>(&self, cb: F) {
         self.star_btn.connect_clicked(move |_| cb());
+    }
+
+    #[allow(dead_code)]
+    pub fn on_zoom_reset<F: Fn() + 'static>(&self, cb: F) {
+        self.zoom_btn.connect_clicked(move |_| cb());
+    }
+
+    #[allow(dead_code)]
+    pub fn set_zoom_percent(&self, percent: u32) {
+        if percent == 100 {
+            self.zoom_btn.set_visible(false);
+        } else {
+            self.zoom_btn.set_label(&format!("{}%", percent));
+            self.zoom_btn.set_visible(true);
+        }
     }
 
     pub fn set_text(&self, text: &str) {
