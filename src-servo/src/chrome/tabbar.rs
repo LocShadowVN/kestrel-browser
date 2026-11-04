@@ -1,3 +1,4 @@
+// src-servo/src/chrome/tabbar.rs
 //! TabBar — Quản lý các tab bằng `tab_id: u64` duy nhất, nút `+` nằm sát bên cạnh tab như Brave/Chrome.
 
 use std::cell::{Cell, RefCell};
@@ -116,19 +117,20 @@ impl TabBar {
     }
 
     pub fn close_tab(&self, tab_id: u64) {
-        let meta = self
-            .tabs
-            .borrow()
-            .iter()
-            .find(|t| t.tab_id == tab_id)
-            .cloned();
+        let removed_meta = {
+            let mut tabs = self.tabs.borrow_mut();
+            if let Some(pos) = tabs.iter().position(|t| t.tab_id == tab_id) {
+                Some(tabs.remove(pos))
+            } else {
+                None
+            }
+        };
 
-        if let Some(m) = meta {
+        if let Some(m) = removed_meta {
             self.tabs_area.remove(m.widget.widget());
             if let Some(pn) = self.notebook.page_num(&m.content) {
                 self.notebook.remove_page(Some(pn));
             }
-            self.tabs.borrow_mut().retain(|t| t.tab_id != tab_id);
             self.update_active_classes();
         }
     }
