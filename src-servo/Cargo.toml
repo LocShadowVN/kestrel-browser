@@ -1,7 +1,13 @@
+// src-servo/Cargo.toml
 [package]
 name = "kestrel"
 version = "1.0.0-alpha"
 edition = "2021"
+authors = ["LocShadowVN"]
+description = "A lightweight, privacy-first Rust web browser built on the Servo 0.6 engine and GTK4."
+license = "GPL-3.0-only"
+repository = "https://github.com/LocShadowVN/kestrel-browser"
+homepage = "https://github.com/LocShadowVN/kestrel-browser"
 build = "build.rs"
 
 [[bin]]
@@ -12,7 +18,7 @@ path = "src/main.rs"
 shared = { path = "../shared" }
 pkcs1 = { workspace = true }
 
-servo-gtk = { git = "https://github.com/LocShadowVN/servo-gtk.git", rev = "3c79d453ed350485cfa3199dc38d0215265faa0d" }
+servo-gtk = { git = "https://github.com/LocShadowVN/servo-gtk.git", rev = "ab100f67b40183bdcd78172d61d59c4cff1e5430" }
 
 gtk4 = { version = "0.11", features = ["v4_12"] }
 glib = { version = "0.22", features = ["v2_74"] }
@@ -33,3 +39,15 @@ adblock = "=0.9.8"
 
 [build-dependencies]
 ureq = "2.10"
+
+[package.metadata.deb]
+maintainer = "LocShadowVN <https://github.com/LocShadowVN>"
+copyright = "2026, LocShadowVN"
+license-file = ["../LICENSE", "0"]
+depends = "$auto, libgtk-4-1 (>= 4.12), libepoxy0, libgbm1, libwayland-client0, libxkbcommon0"
+section = "web"
+priority = "optional"
+assets = [
+    ["../target/release/kestrel", "usr/bin/kestrel", "755"],
+    ["../README.md", "usr/share/doc/kestrel/README.md", "644"],
+]
