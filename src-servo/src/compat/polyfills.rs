@@ -1,7 +1,8 @@
-//! Polyfill JavaScript chuẩn hóa (v7) + Anti-Adblock Killer + Chrome Spoofing + Lazy-Load Hydrator.
-//! - Chống phát hiện Adblock (Anti-Adblock Defuser): Giả lập `adsbygoogle`, `googletag`, `BlockAdBlock`,
-//!   chặn `onerror` trên script mồi nhử và trả về kích thước giả cho các bait `div` (`adsbox`, `ad-banner`).
-//! - Tự động kích hoạt `IntersectionObserver` và nạp ảnh `data-src` trên VnExpress.
+// src-servo/src/compat/polyfills.rs
+//! Polyfill JavaScript chuẩn hóa (v8) + Anti-Adblock Defuser + Chrome Spoofing + Lazy-Load Hydrator.
+//! - Hỗ trợ `Ctrl+Click` / `Middle-Click` vào thẻ `<a>` để mở link trong tab mới (`open-new-tab`).
+//! - Tôn trọng trạng thái Kestrel Shields (`window.__kestrelShieldsLevel`).
+//! - Tích hợp Find-in-Page (`window.__kestrelFind`) và Page Zoom (`window.__kestrelSetZoom`).
 
 pub const POLYFILL_SCRIPT: &str = r#"
 (function () {
@@ -62,7 +63,6 @@ pub const POLYFILL_SCRIPT: &str = r#"
         } catch (_) {}
     }
 
-    // ---- 2. Anti-Adblock Defuser & Ad-Script Surrogates (Vượt qua các trình phát hiện Adblock) ----
     function isInternalPage() {
         if (typeof location === 'undefined') return true;
         var p = location.protocol || '';
@@ -70,9 +70,64 @@ pub const POLYFILL_SCRIPT: &str = r#"
         return p === 'kestrel:' || p === 'about:' || p === 'data:' || h.indexOf('kestrel://') === 0;
     }
 
-    if (typeof window !== 'undefined' && !isInternalPage()) {
+    function isShieldsEnabled() {
+        if (typeof window !== 'undefined' && typeof window.__kestrelShieldsLevel === 'number') {
+            return window.__kestrelShieldsLevel > 0;
+        }
+        return true;
+    }
+
+    function postToKestrel(payload) {
         try {
-            // 2.1. Giả lập các biến toàn cục mà script kiểm tra Adblock thường dò
+            if (window.servoGtk && window.servoGtk.messageHandlers &&
+                window.servoGtk.messageHandlers.kestrel) {
+                window.servoGtk.messageHandlers.kestrel.postMessage(JSON.stringify(payload));
+                return true;
+            }
+        } catch (_) {}
+        return false;
+    }
+
+    // ---- 1.5. Ctrl+Click & Middle-Click (Button 1) để mở link trong Tab mới ----
+    if (typeof document !== 'undefined') {
+        function findAnchor(el) {
+            while (el && el !== document) {
+                if (el.tagName && el.tagName.toUpperCase() === 'A' && el.href) {
+                    return el;
+                }
+                el = el.parentElement;
+            }
+            return null;
+        }
+
+        document.addEventListener('click', function (e) {
+            if (e.defaultPrevented) return;
+            if (e.ctrlKey || e.metaKey) {
+                var a = findAnchor(e.target);
+                if (a && a.href && a.href.indexOf('javascript:') !== 0) {
+                    if (postToKestrel({ action: 'open-new-tab', url: a.href })) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }
+                }
+            }
+        }, true);
+
+        document.addEventListener('auxclick', function (e) {
+            if (e.defaultPrevented || e.button !== 1) return;
+            var a = findAnchor(e.target);
+            if (a && a.href && a.href.indexOf('javascript:') !== 0) {
+                if (postToKestrel({ action: 'open-new-tab', url: a.href })) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+            }
+        }, true);
+    }
+
+    // ---- 2. Anti-Adblock Defuser & Ad-Script Surrogates ----
+    if (typeof window !== 'undefined' && !isInternalPage() && isShieldsEnabled()) {
+        try {
             window.canRunAds = true;
             window.isAdBlockActive = false;
             window.adblock = false;
@@ -87,7 +142,6 @@ pub const POLYFILL_SCRIPT: &str = r#"
                 };
             }
 
-            // 2.2. Giả lập Google Publisher Tag (GPT / googletag)
             if (!window.googletag || !window.googletag.apiReady) {
                 var noopFn = function () { return this; };
                 var slotStub = {
@@ -182,7 +236,6 @@ pub const POLYFILL_SCRIPT: &str = r#"
                 };
             }
 
-            // 2.3. Vô hiệu hóa BlockAdBlock / FuckAdBlock
             var FakeAdBlockDetector = function () {};
             FakeAdBlockDetector.prototype.on = function (detected, fn) {
                 if (!detected && typeof fn === 'function') {
@@ -220,8 +273,8 @@ pub const POLYFILL_SCRIPT: &str = r#"
                 } catch (_) {}
             });
 
-            // 2.4. Chặn sự kiện error trên các thẻ <script> mồi nhử và giả lập onload thành công
             window.addEventListener('error', function (ev) {
+                if (!isShieldsEnabled()) return;
                 var t = ev && ev.target;
                 if (t && t.tagName === 'SCRIPT') {
                     var src = (t.src || '').toLowerCase();
@@ -235,10 +288,9 @@ pub const POLYFILL_SCRIPT: &str = r#"
                 }
             }, true);
 
-            // 2.5. Đánh lừa kiểm tra kích thước các thẻ Bait/Honeypot (adsbox, pub_300x250, text-ad...)
             var BAIT_CLASS_RE = /\b(adsbox|pub_300x250|pub_728x90|text-ad|textAd|text_ad|text_ads|ad-tester|adbanner|ad-placeholder)\b/i;
             function isBaitElement(el) {
-                if (!el || el.nodeType !== 1) return false;
+                if (!isShieldsEnabled() || !el || el.nodeType !== 1) return false;
                 var cls = (typeof el.className === 'string' ? el.className : '') + ' ' + (el.id || '');
                 return BAIT_CLASS_RE.test(cls) && el.children.length === 0;
             }
@@ -269,8 +321,6 @@ pub const POLYFILL_SCRIPT: &str = r#"
     }
 
     // ---- 3. Safe Cosmetic Adblock, Anti-Adblock Modal Remover & Lazy-Load Hydrator ----
-    // Không bao gồm các class mồi nhử (.adsbox, .ad-banner, .adsbygoogle rỗng) trong CSS display:none
-    // để các trang test Adblock không phát hiện qua getComputedStyle()!
     var AD_SELECTORS = [
         '[id^="div-gpt-ad"]',
         '[id^="google_ads_iframe"]',
@@ -290,7 +340,9 @@ pub const POLYFILL_SCRIPT: &str = r#"
         '.box-qc',
         '.banner-qc',
         'iframe[src*="criteo."]',
-        /* Anti-Adblock Popup Overlays (Funding Choices / Admiral) */
+        'iframe[src*="taboola.com"]',
+        'iframe[src*="outbrain.com"]',
+        'iframe[src*="mgid.com"]',
         '.fc-ab-root',
         '.fc-whitelist-root'
     ];
@@ -309,16 +361,11 @@ pub const POLYFILL_SCRIPT: &str = r#"
         '}\n';
 
     function reportCosmeticBlocked(count) {
-        if (count <= 0) return;
-        try {
-            if (window.servoGtk && window.servoGtk.messageHandlers &&
-                window.servoGtk.messageHandlers.kestrel) {
-                window.servoGtk.messageHandlers.kestrel.postMessage(JSON.stringify({
-                    action: 'adblock-cosmetic-hit',
-                    count: count
-                }));
-            }
-        } catch (_) {}
+        if (count <= 0 || !isShieldsEnabled()) return;
+        postToKestrel({
+            action: 'adblock-cosmetic-hit',
+            count: count
+        });
     }
 
     var combinedSelector = AD_SELECTORS.join(',');
@@ -330,7 +377,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
             for (var i = 0; i < imgs.length; i++) {
                 var img = imgs[i];
                 var realSrc = img.getAttribute('data-src') || img.getAttribute('data-original') || img.getAttribute('data-lazy-src');
-                if (realSrc && realSrc.indexOf('http') === 0) {
+                if (realSrc && (realSrc.indexOf('http') === 0 || realSrc.indexOf('//') === 0)) {
                     var cur = img.getAttribute('src') || '';
                     if (!cur || cur.indexOf('data:image') === 0 || cur.indexOf('base64') !== -1) {
                         img.setAttribute('src', realSrc);
@@ -351,6 +398,16 @@ pub const POLYFILL_SCRIPT: &str = r#"
     function scrubAdsAndHydrate() {
         if (typeof document === 'undefined' || isInternalPage()) return;
 
+        hydrateLazyMedia();
+
+        if (!isShieldsEnabled()) {
+            var existingStyle = document.getElementById('kestrel-cosmetic-adblock');
+            if (existingStyle && existingStyle.parentNode) {
+                existingStyle.parentNode.removeChild(existingStyle);
+            }
+            return;
+        }
+
         if (!document.getElementById('kestrel-cosmetic-adblock')) {
             var target = document.head || document.documentElement;
             if (target) {
@@ -362,8 +419,6 @@ pub const POLYFILL_SCRIPT: &str = r#"
                 } catch (_) {}
             }
         }
-
-        hydrateLazyMedia();
 
         if (!document.body) return;
         var newlyBlocked = 0;
@@ -380,7 +435,6 @@ pub const POLYFILL_SCRIPT: &str = r#"
                     el.style.setProperty('min-height', '0px', 'important');
                 }
             }
-            // Nếu trang khóa cuộn do popup Anti-Adblock (.fc-ab-root), mở khóa lại cuộn
             if (document.querySelector('.fc-ab-root, .fc-whitelist-root')) {
                 document.body.style.setProperty('overflow', 'auto', 'important');
                 if (document.documentElement) {
@@ -411,56 +465,151 @@ pub const POLYFILL_SCRIPT: &str = r#"
         }
     }
 
-    // ---- 4. Active IntersectionObserver & ResizeObserver ----
+    // ---- 4. Built-in Find-in-Page (`window.__kestrelFind`) & Page Zoom (`window.__kestrelSetZoom`) ----
+    if (typeof window !== 'undefined') {
+        window.__kestrelSetZoom = function (factor) {
+            var z = Number(factor) || 1;
+            if (document && document.documentElement) {
+                document.documentElement.style.zoom = String(z);
+            }
+        };
+
+        window.__kestrelFind = function (query, backwards) {
+            if (!query) {
+                if (window.getSelection) {
+                    var sel = window.getSelection();
+                    if (sel && sel.removeAllRanges) sel.removeAllRanges();
+                }
+                return false;
+            }
+            if (typeof window.find === 'function') {
+                return window.find(String(query), false, !!backwards, true, false, true, false);
+            }
+            return false;
+        };
+    }
+
+    // ---- 5. Geometry-Aware IntersectionObserver & ResizeObserver ----
     var DEFAULT_RECT = {
         x: 0, y: 0, width: 320, height: 200, top: 0, left: 0, right: 320, bottom: 200,
         toJSON: function () { return this; }
     };
     var DEFAULT_BOX = [{ inlineSize: 320, blockSize: 200 }];
 
-    globalThis.IntersectionObserver = function IntersectionObserver(callback, options) {
-        this._cb = callback;
-        this._pending = [];
-        this._scheduled = false;
-        this.root = (options && options.root) || null;
-        this.rootMargin = (options && options.rootMargin) || '0px';
-        this.thresholds = [0];
-    };
-    globalThis.IntersectionObserver.prototype.observe = function (target) {
-        if (!target || typeof this._cb !== 'function') return;
-        if (this._pending.indexOf(target) === -1) this._pending.push(target);
-        if (!this._scheduled) {
+    if (typeof globalThis.IntersectionObserver === 'undefined') {
+        var activeIOInstances = [];
+
+        function computeElementRect(el) {
+            try {
+                if (el && typeof el.getBoundingClientRect === 'function') {
+                    var r = el.getBoundingClientRect();
+                    if (r && (r.width > 0 || r.height > 0 || r.top !== 0 || r.bottom !== 0)) {
+                        return r;
+                    }
+                }
+            } catch (_) {}
+            return DEFAULT_RECT;
+        }
+
+        function checkAllIOInstances() {
+            for (var i = 0; i < activeIOInstances.length; i++) {
+                activeIOInstances[i]._evaluate();
+            }
+        }
+
+        if (typeof window !== 'undefined') {
+            window.addEventListener('scroll', checkAllIOInstances, { passive: true });
+            window.addEventListener('resize', checkAllIOInstances, { passive: true });
+        }
+
+        globalThis.IntersectionObserver = function IntersectionObserver(callback, options) {
+            this._cb = callback;
+            this._targets = [];
+            this._state = new WeakMap();
+            this._scheduled = false;
+            this.root = (options && options.root) || null;
+            this.rootMargin = (options && options.rootMargin) || '0px';
+            this.thresholds = (options && Array.isArray(options.threshold))
+                ? options.threshold
+                : [(options && typeof options.threshold === 'number') ? options.threshold : 0];
+            activeIOInstances.push(this);
+        };
+
+        globalThis.IntersectionObserver.prototype._schedule = function () {
+            if (this._scheduled) return;
             this._scheduled = true;
             var self = this;
             setTimeout(function () {
                 self._scheduled = false;
-                var list = self._pending.splice(0, self._pending.length);
-                if (list.length === 0) return;
-                var now = Date.now();
-                var entries = list.map(function (el) {
-                    return {
+                self._evaluate();
+            }, 25);
+        };
+
+        globalThis.IntersectionObserver.prototype._evaluate = function () {
+            if (this._targets.length === 0 || typeof this._cb !== 'function') return;
+            var vw = (typeof window !== 'undefined' && window.innerWidth) || 1280;
+            var vh = (typeof window !== 'undefined' && window.innerHeight) || 900;
+            var preloadMargin = 600;
+            var now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+            var rootBounds = {
+                x: 0, y: 0, top: 0, left: 0, width: vw, height: vh, right: vw, bottom: vh
+            };
+            var changedEntries = [];
+
+            for (var i = 0; i < this._targets.length; i++) {
+                var el = this._targets[i];
+                var rect = computeElementRect(el);
+                var isIntersecting = (
+                    rect.bottom >= -preloadMargin &&
+                    rect.top <= (vh + preloadMargin) &&
+                    rect.right >= -preloadMargin &&
+                    rect.left <= (vw + preloadMargin)
+                );
+                var prev = this._state.get(el);
+                if (prev !== isIntersecting) {
+                    this._state.set(el, isIntersecting);
+                    changedEntries.push({
                         time: now,
                         target: el,
-                        isIntersecting: true,
-                        intersectionRatio: 1,
-                        boundingClientRect: DEFAULT_RECT,
-                        intersectionRect: DEFAULT_RECT,
-                        rootBounds: DEFAULT_RECT
-                    };
-                });
-                try { self._cb(entries, self); } catch (_) {}
+                        isIntersecting: isIntersecting,
+                        intersectionRatio: isIntersecting ? 1 : 0,
+                        boundingClientRect: rect,
+                        intersectionRect: isIntersecting ? rect : {
+                            x: 0, y: 0, top: 0, left: 0, width: 0, height: 0, right: 0, bottom: 0
+                        },
+                        rootBounds: rootBounds
+                    });
+                }
+            }
+
+            if (changedEntries.length > 0) {
+                try { this._cb(changedEntries, this); } catch (_) {}
                 hydrateLazyMedia();
-            }, 25);
-        }
-    };
-    globalThis.IntersectionObserver.prototype.unobserve = function (target) {
-        var idx = this._pending.indexOf(target);
-        if (idx !== -1) this._pending.splice(idx, 1);
-    };
-    globalThis.IntersectionObserver.prototype.disconnect = function () {
-        this._pending.length = 0;
-    };
-    globalThis.IntersectionObserver.prototype.takeRecords = function () { return []; };
+            }
+        };
+
+        globalThis.IntersectionObserver.prototype.observe = function (target) {
+            if (!target || typeof this._cb !== 'function') return;
+            if (this._targets.indexOf(target) === -1) {
+                this._targets.push(target);
+                this._schedule();
+            }
+        };
+
+        globalThis.IntersectionObserver.prototype.unobserve = function (target) {
+            var idx = this._targets.indexOf(target);
+            if (idx !== -1) this._targets.splice(idx, 1);
+            this._state.delete(target);
+        };
+
+        globalThis.IntersectionObserver.prototype.disconnect = function () {
+            this._targets.length = 0;
+            var idx = activeIOInstances.indexOf(this);
+            if (idx !== -1) activeIOInstances.splice(idx, 1);
+        };
+
+        globalThis.IntersectionObserver.prototype.takeRecords = function () { return []; };
+    }
 
     if (typeof globalThis.ResizeObserver === 'undefined') {
         globalThis.ResizeObserver = function ResizeObserver(callback) {
@@ -500,16 +649,78 @@ pub const POLYFILL_SCRIPT: &str = r#"
         };
     }
 
-    // ---- 5. Modern JS Built-ins (Promise, Object, Map, Array, structuredClone, UUID) ----
-    if (typeof Promise !== 'undefined' && typeof Promise.withResolvers !== 'function') {
-        Object.defineProperty(Promise, 'withResolvers', {
-            value: function () {
-                var resolve, reject;
-                var promise = new Promise(function (res, rej) { resolve = res; reject = rej; });
-                return { promise: promise, resolve: resolve, reject: reject };
-            },
-            writable: true, configurable: true
-        });
+    if (typeof globalThis.PerformanceObserver === 'undefined') {
+        globalThis.PerformanceObserver = function PerformanceObserver(callback) {
+            this._cb = callback;
+        };
+        globalThis.PerformanceObserver.supportedEntryTypes = [
+            'navigation', 'resource', 'mark', 'measure', 'paint', 'longtask', 'largest-contentful-paint', 'layout-shift'
+        ];
+        globalThis.PerformanceObserver.prototype.observe = function () {};
+        globalThis.PerformanceObserver.prototype.disconnect = function () {};
+        globalThis.PerformanceObserver.prototype.takeRecords = function () { return []; };
+    }
+
+    // ---- 6. Modern JS Built-ins (ES2022–ES2024: Promise, Array, Set, Object, Map, URL, Crypto) ----
+    if (typeof globalThis.AggregateError === 'undefined') {
+        globalThis.AggregateError = function AggregateError(errors, message) {
+            var err = new Error(message || '');
+            err.name = 'AggregateError';
+            err.errors = Array.isArray(errors) ? errors : Array.from(errors || []);
+            return err;
+        };
+        globalThis.AggregateError.prototype = Object.create(Error.prototype);
+    }
+
+    if (typeof Promise !== 'undefined') {
+        if (typeof Promise.withResolvers !== 'function') {
+            Object.defineProperty(Promise, 'withResolvers', {
+                value: function () {
+                    var resolve, reject;
+                    var promise = new Promise(function (res, rej) { resolve = res; reject = rej; });
+                    return { promise: promise, resolve: resolve, reject: reject };
+                },
+                writable: true, configurable: true
+            });
+        }
+        if (typeof Promise.allSettled !== 'function') {
+            Object.defineProperty(Promise, 'allSettled', {
+                value: function (iterable) {
+                    var arr = Array.from(iterable || []).map(function (p) {
+                        return Promise.resolve(p).then(
+                            function (value) { return { status: 'fulfilled', value: value }; },
+                            function (reason) { return { status: 'rejected', reason: reason }; }
+                        );
+                    });
+                    return Promise.all(arr);
+                },
+                writable: true, configurable: true
+            });
+        }
+        if (typeof Promise.any !== 'function') {
+            Object.defineProperty(Promise, 'any', {
+                value: function (iterable) {
+                    var items = Array.from(iterable || []);
+                    if (items.length === 0) {
+                        return Promise.reject(new globalThis.AggregateError([], 'All promises were rejected'));
+                    }
+                    return new Promise(function (resolve, reject) {
+                        var errors = new Array(items.length);
+                        var rejectedCount = 0;
+                        items.forEach(function (item, idx) {
+                            Promise.resolve(item).then(resolve, function (err) {
+                                errors[idx] = err;
+                                rejectedCount++;
+                                if (rejectedCount === items.length) {
+                                    reject(new globalThis.AggregateError(errors, 'All promises were rejected'));
+                                }
+                            });
+                        });
+                    });
+                },
+                writable: true, configurable: true
+            });
+        }
     }
 
     if (typeof queueMicrotask !== 'function') {
@@ -533,6 +744,21 @@ pub const POLYFILL_SCRIPT: &str = r#"
         });
     }
 
+    if (typeof Object.fromEntries !== 'function') {
+        Object.defineProperty(Object, 'fromEntries', {
+            value: function (iter) {
+                var obj = {};
+                for (var pair of iter) {
+                    if (pair && typeof pair === 'object') {
+                        obj[pair[0]] = pair[1];
+                    }
+                }
+                return obj;
+            },
+            writable: true, configurable: true
+        });
+    }
+
     if (typeof Object.groupBy !== 'function') {
         Object.defineProperty(Object, 'groupBy', {
             value: function (items, callbackFn) {
@@ -548,6 +774,181 @@ pub const POLYFILL_SCRIPT: &str = r#"
             },
             writable: true, configurable: true
         });
+    }
+
+    if (typeof Map !== 'undefined' && typeof Map.groupBy !== 'function') {
+        Object.defineProperty(Map, 'groupBy', {
+            value: function (items, callbackFn) {
+                if (typeof callbackFn !== 'function') throw new TypeError('callbackFn must be a function');
+                var map = new Map();
+                var k = 0;
+                for (var item of items) {
+                    var key = callbackFn(item, k++);
+                    var list = map.get(key);
+                    if (!list) {
+                        list = [];
+                        map.set(key, list);
+                    }
+                    list.push(item);
+                }
+                return map;
+            },
+            writable: true, configurable: true
+        });
+    }
+
+    if (typeof Array !== 'undefined') {
+        if (typeof Array.prototype.at !== 'function') {
+            Object.defineProperty(Array.prototype, 'at', {
+                value: function (n) {
+                    n = Math.trunc(n) || 0;
+                    if (n < 0) n += this.length;
+                    if (n < 0 || n >= this.length) return undefined;
+                    return this[n];
+                },
+                writable: true, configurable: true
+            });
+        }
+        if (typeof Array.prototype.findLast !== 'function') {
+            Object.defineProperty(Array.prototype, 'findLast', {
+                value: function (predicate, thisArg) {
+                    for (var i = this.length - 1; i >= 0; i--) {
+                        if (predicate.call(thisArg, this[i], i, this)) return this[i];
+                    }
+                    return undefined;
+                },
+                writable: true, configurable: true
+            });
+        }
+        if (typeof Array.prototype.findLastIndex !== 'function') {
+            Object.defineProperty(Array.prototype, 'findLastIndex', {
+                value: function (predicate, thisArg) {
+                    for (var i = this.length - 1; i >= 0; i--) {
+                        if (predicate.call(thisArg, this[i], i, this)) return i;
+                    }
+                    return -1;
+                },
+                writable: true, configurable: true
+            });
+        }
+        if (typeof Array.prototype.toSorted !== 'function') {
+            Object.defineProperty(Array.prototype, 'toSorted', {
+                value: function (compareFn) {
+                    return Array.from(this).sort(compareFn);
+                },
+                writable: true, configurable: true
+            });
+        }
+        if (typeof Array.prototype.toReversed !== 'function') {
+            Object.defineProperty(Array.prototype, 'toReversed', {
+                value: function () {
+                    return Array.from(this).reverse();
+                },
+                writable: true, configurable: true
+            });
+        }
+        if (typeof Array.prototype.toSpliced !== 'function') {
+            Object.defineProperty(Array.prototype, 'toSpliced', {
+                value: function () {
+                    var copy = Array.from(this);
+                    Array.prototype.splice.apply(copy, arguments);
+                    return copy;
+                },
+                writable: true, configurable: true
+            });
+        }
+        if (typeof Array.prototype.with !== 'function') {
+            Object.defineProperty(Array.prototype, 'with', {
+                value: function (index, value) {
+                    var copy = Array.from(this);
+                    var i = Math.trunc(index) || 0;
+                    if (i < 0) i += copy.length;
+                    if (i < 0 || i >= copy.length) throw new RangeError('Invalid index');
+                    copy[i] = value;
+                    return copy;
+                },
+                writable: true, configurable: true
+            });
+        }
+    }
+
+    if (typeof String !== 'undefined' && typeof String.prototype.at !== 'function') {
+        Object.defineProperty(String.prototype, 'at', {
+            value: function (n) {
+                n = Math.trunc(n) || 0;
+                if (n < 0) n += this.length;
+                if (n < 0 || n >= this.length) return undefined;
+                return this.charAt(n);
+            },
+            writable: true, configurable: true
+        });
+    }
+
+    if (typeof Set !== 'undefined') {
+        if (typeof Set.prototype.union !== 'function') {
+            Object.defineProperty(Set.prototype, 'union', {
+                value: function (other) {
+                    var res = new Set(this);
+                    if (other && typeof other.forEach === 'function') {
+                        other.forEach(function (v) { res.add(v); });
+                    }
+                    return res;
+                },
+                writable: true, configurable: true
+            });
+        }
+        if (typeof Set.prototype.intersection !== 'function') {
+            Object.defineProperty(Set.prototype, 'intersection', {
+                value: function (other) {
+                    var res = new Set();
+                    if (other && typeof other.has === 'function') {
+                        this.forEach(function (v) {
+                            if (other.has(v)) res.add(v);
+                        });
+                    }
+                    return res;
+                },
+                writable: true, configurable: true
+            });
+        }
+        if (typeof Set.prototype.difference !== 'function') {
+            Object.defineProperty(Set.prototype, 'difference', {
+                value: function (other) {
+                    var res = new Set(this);
+                    if (other && typeof other.forEach === 'function') {
+                        other.forEach(function (v) { res.delete(v); });
+                    }
+                    return res;
+                },
+                writable: true, configurable: true
+            });
+        }
+    }
+
+    if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
+        Object.defineProperty(URL, 'canParse', {
+            value: function (url, base) {
+                try {
+                    new URL(url, base);
+                    return true;
+                } catch (_) {
+                    return false;
+                }
+            },
+            writable: true, configurable: true
+        });
+    }
+
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID !== 'function') {
+        try {
+            crypto.randomUUID = function () {
+                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                    var r = (Math.random() * 16) | 0;
+                    var v = c === 'x' ? r : (r & 0x3) | 0x8;
+                    return v.toString(16);
+                });
+            };
+        } catch (_) {}
     }
 
     if (typeof globalThis.structuredClone !== 'function') {
@@ -611,19 +1012,47 @@ pub const POLYFILL_SCRIPT: &str = r#"
         globalThis.cancelIdleCallback = function (handle) { clearTimeout(handle); };
     }
 
-    if (typeof window !== 'undefined' && typeof window.visualViewport === 'undefined') {
-        var vv = {
-            offsetLeft: 0, offsetTop: 0, pageLeft: 0, pageTop: 0, scale: 1,
-            onresize: null, onscroll: null,
-            addEventListener: function (type, fn, opts) { window.addEventListener(type, fn, opts); },
-            removeEventListener: function (type, fn, opts) { window.removeEventListener(type, fn, opts); },
-            dispatchEvent: function (ev) { return window.dispatchEvent(ev); }
-        };
-        Object.defineProperties(vv, {
-            width: { get: function () { return window.innerWidth || 1280; }, configurable: true },
-            height: { get: function () { return window.innerHeight || 800; }, configurable: true }
-        });
-        window.visualViewport = vv;
+    if (typeof window !== 'undefined') {
+        if (typeof window.visualViewport === 'undefined') {
+            var vv = {
+                offsetLeft: 0, offsetTop: 0, pageLeft: 0, pageTop: 0, scale: 1,
+                onresize: null, onscroll: null,
+                addEventListener: function (type, fn, opts) { window.addEventListener(type, fn, opts); },
+                removeEventListener: function (type, fn, opts) { window.removeEventListener(type, fn, opts); },
+                dispatchEvent: function (ev) { return window.dispatchEvent(ev); }
+            };
+            Object.defineProperties(vv, {
+                width: { get: function () { return window.innerWidth || 1280; }, configurable: true },
+                height: { get: function () { return window.innerHeight || 800; }, configurable: true }
+            });
+            window.visualViewport = vv;
+        }
+
+        if (typeof window.matchMedia !== 'function') {
+            window.matchMedia = function (query) {
+                var q = String(query || '').toLowerCase();
+                var matches = false;
+                if (q === '' || q === 'all' || q === 'screen') matches = true;
+                else if (q.indexOf('prefers-color-scheme: dark') !== -1) matches = true;
+                return {
+                    matches: matches,
+                    media: String(query || ''),
+                    onchange: null,
+                    addListener: function () {},
+                    removeListener: function () {},
+                    addEventListener: function () {},
+                    removeEventListener: function () {},
+                    dispatchEvent: function () { return false; }
+                };
+            };
+        }
+
+        if (typeof window.CSS === 'undefined') {
+            window.CSS = {};
+        }
+        if (typeof window.CSS.supports !== 'function') {
+            window.CSS.supports = function () { return true; };
+        }
     }
 
     if (typeof Element !== 'undefined') {
