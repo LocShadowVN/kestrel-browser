@@ -1,3 +1,4 @@
+// src-servo/src/chrome/style.rs
 //! Global CSS cho Kestrel — Tông màu trung tính, đầm mắt, hài hòa cả Dark Mode lẫn Light Mode.
 
 const CSS: &str = r#"
@@ -20,6 +21,7 @@ window.theme-light .kestrel-toolbar button.kestrel-toolbar-button image,
 window.theme-light .kestrel-toolbar menubutton.kestrel-toolbar-button image,
 window.theme-light .kestrel-omnibox-security,
 window.theme-light .kestrel-omnibox-shield image,
+window.theme-light .kestrel-find-bar image,
 window.theme-light popover image {
     filter: brightness(0.24);
 }
@@ -200,23 +202,26 @@ menubutton.kestrel-toolbar-button > button {
     padding: 0 5px;
     margin: 0 1px;
     color: #d4d6e0;
-    transition: background-color 100ms ease;
+    transition: background-color 100ms ease, opacity 100ms ease;
 }
-button.kestrel-toolbar-button:hover,
+button.kestrel-toolbar-button:disabled {
+    opacity: 0.35;
+}
+button.kestrel-toolbar-button:hover:not(:disabled),
 menubutton.kestrel-toolbar-button > button:hover {
     background: rgba(255, 255, 255, 0.08);
 }
-button.kestrel-toolbar-button:active,
+button.kestrel-toolbar-button:active:not(:disabled),
 button.kestrel-toolbar-button:checked,
 menubutton.kestrel-toolbar-button > button:active,
 menubutton.kestrel-toolbar-button > button:checked {
     background: rgba(255, 255, 255, 0.13);
 }
-window.theme-light button.kestrel-toolbar-button:hover,
+window.theme-light button.kestrel-toolbar-button:hover:not(:disabled),
 window.theme-light menubutton.kestrel-toolbar-button > button:hover {
     background: rgba(0, 0, 0, 0.07);
 }
-window.theme-light button.kestrel-toolbar-button:active,
+window.theme-light button.kestrel-toolbar-button:active:not(:disabled),
 window.theme-light menubutton.kestrel-toolbar-button > button:active,
 window.theme-light menubutton.kestrel-toolbar-button > button:checked {
     background: rgba(0, 0, 0, 0.11);
@@ -291,6 +296,23 @@ window.theme-light entry.kestrel-omnibox-entry > text > selection {
     color: #111318;
 }
 
+button.kestrel-omnibox-zoom {
+    background: rgba(255, 255, 255, 0.08);
+    background-image: none;
+    border: 1px solid #2f3446;
+    border-radius: 10px;
+    padding: 0 7px;
+    min-height: 22px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #d4d6e0;
+}
+window.theme-light button.kestrel-omnibox-zoom {
+    background: #eef0f6;
+    border-color: #c9cfdc;
+    color: #242834;
+}
+
 button.kestrel-omnibox-action {
     background: transparent;
     background-image: none;
@@ -353,6 +375,36 @@ window.theme-light menubutton.kestrel-omnibox-shield > button:checked {
 }
 window.theme-light .kestrel-shield-count {
     color: #242834;
+}
+
+/* ============================================================
+   FIND IN PAGE BAR (Ctrl+F)
+   ============================================================ */
+.kestrel-find-bar {
+    background: #151821;
+    border-bottom: 1px solid #242836;
+    padding: 4px 12px;
+}
+window.theme-light .kestrel-find-bar {
+    background: #eef0f6;
+    border-bottom: 1px solid #d5d9e4;
+}
+
+entry.kestrel-find-entry,
+entry.kestrel-find-entry > text {
+    background: #0f1117;
+    color: #eef0f7;
+    border: 1px solid #2b3040;
+    border-radius: 8px;
+    padding: 2px 8px;
+    min-height: 26px;
+    font-size: 13px;
+}
+window.theme-light entry.kestrel-find-entry,
+window.theme-light entry.kestrel-find-entry > text {
+    background: #ffffff;
+    color: #161820;
+    border-color: #c9cfdc;
 }
 
 /* ============================================================
