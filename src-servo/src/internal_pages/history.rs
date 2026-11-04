@@ -1,6 +1,7 @@
+// src-servo/src/internal_pages/history.rs
 //! Trang lịch sử nội bộ — kestrel://history.
 
-use crate::internal_pages::NAV_SHIM;
+use crate::internal_pages::{escape_html, sanitize_href, NAV_SHIM};
 
 pub fn render(
     records: &[(i64, String, String, Option<String>)],
@@ -32,11 +33,15 @@ pub fn render(
   </td>
 </tr>"#,
             id = id,
-            href = escape(&safe_url),
-            title = escape(display_title),
-            url_disp = escape(url),
-            time = escape(ts_display),
-            search = escape(&format!("{} {}", display_title.to_lowercase(), url.to_lowercase())),
+            href = escape_html(&safe_url),
+            title = escape_html(display_title),
+            url_disp = escape_html(url),
+            time = escape_html(ts_display),
+            search = escape_html(&format!(
+                "{} {}",
+                display_title.to_lowercase(),
+                url.to_lowercase()
+            )),
         ));
     }
 
@@ -189,7 +194,7 @@ pub fn render(
   </script>
 </body>
 </html>"#,
-        lang = lang,
+        lang = escape_html(lang),
         theme_class = theme_class,
         heading = t("Browsing History", "Lịch sử duyệt web"),
         count = records.len(),
@@ -204,25 +209,4 @@ pub fn render(
         empty_msg = empty_msg,
         shim = NAV_SHIM,
     )
-}
-
-fn sanitize_href(url: &str) -> String {
-    let trimmed = url.trim();
-    let lower = trimmed.to_ascii_lowercase();
-    if lower.starts_with("https://")
-        || lower.starts_with("http://")
-        || lower.starts_with("kestrel://")
-    {
-        trimmed.to_string()
-    } else {
-        "about:blank".to_string()
-    }
-}
-
-fn escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
 }
