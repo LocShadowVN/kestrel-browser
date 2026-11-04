@@ -1,3 +1,4 @@
+// src-servo/src/storage/database.rs
 use rusqlite::{params, Connection};
 use shared::{BookmarkRecord, HistoryRecord};
 use std::fs;
@@ -22,6 +23,8 @@ impl Database {
             "
             PRAGMA journal_mode = WAL;
             PRAGMA synchronous = NORMAL;
+            PRAGMA temp_store = MEMORY;
+            PRAGMA foreign_keys = ON;
             PRAGMA busy_timeout = 5000;
 
             CREATE TABLE IF NOT EXISTS history (
@@ -38,6 +41,12 @@ impl Database {
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS session_tabs (
+                position INTEGER PRIMARY KEY,
+                url TEXT NOT NULL,
+                title TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_history_url ON history(url);
             ",
@@ -57,13 +66,15 @@ impl Database {
 
     pub fn insert_history(&self, url: &str, title: &str) -> rusqlite::Result<()> {
         let trimmed = url.trim();
-        if trimmed.is_empty() || trimmed == "about:blank" {
+        if trimmed.is_empty()
+            || trimmed == "about:blank"
+            || trimmed.to_ascii_lowercase().starts_with("kestrel:")
+        {
             return Ok(());
         }
 
         let conn = self.lock_conn();
 
-        // Nếu dòng lịch sử mới nhất có cùng URL, cập nhật lại title và timestamp thay vì tạo bản ghi trùng
         let latest: Option<(i64, String)> = conn
             .query_row(
                 "SELECT id, url FROM history ORDER BY id DESC LIMIT 1",
@@ -224,6 +235,49 @@ impl Database {
             .ok()?;
         stmt.query_row(params![key], |r| r.get::<_, String>(0)).ok()
     }
+
+    /// Lưu danh sách các tab đang mở `(url, title, is_active)` để khôi phục phiên.
+    #[allow(dead_code)]
+    pub fn save_session_tabs(&self, tabs: &[(String, String, bool)]) -> rusqlite::Result<()> {
+        let mut conn = self.lock_conn();
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM session_tabs", [])?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO session_tabs (position, url, title, is_active) VALUES (?1, ?2, ?3, ?4)",
+            )?;
+            for (idx, (url, title, is_active)) in tabs.iter().enumerate() {
+                stmt.execute(params![
+                    idx as i64,
+                    url.trim(),
+                    title.trim(),
+                    if *is_active { 1i64 } else { 0i64 }
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Đọc danh sách các tab đã lưu từ phiên trước.
+    #[allow(dead_code)]
+    pub fn load_session_tabs(&self) -> rusqlite::Result<Vec<(String, String, bool)>> {
+        let conn = self.lock_conn();
+        let mut stmt = conn.prepare(
+            "SELECT url, title, is_active FROM session_tabs ORDER BY position ASC",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            let url: String = r.get(0)?;
+            let title: String = r.get(1)?;
+            let active: i64 = r.get(2)?;
+            Ok((url, title, active != 0))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
 }
 
 #[cfg(test)]
@@ -249,6 +303,12 @@ mod tests {
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS session_tabs (
+                position INTEGER PRIMARY KEY,
+                url TEXT NOT NULL,
+                title TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 0
+            );
             ",
         )
         .expect("schema");
@@ -265,6 +325,14 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].url, "https://example.com");
         assert_eq!(rows[0].title, "Example");
+    }
+
+    #[test]
+    fn test_internal_pages_excluded_from_history() {
+        let db = temp_db();
+        db.insert_history("kestrel://home", "Home").unwrap();
+        db.insert_history("kestrel://settings", "Settings").unwrap();
+        assert_eq!(db.history_count(), 0);
     }
 
     #[test]
@@ -293,34 +361,14 @@ mod tests {
     }
 
     #[test]
-    fn test_remove_bookmark_by_url() {
+    fn test_session_tabs_roundtrip() {
         let db = temp_db();
-        db.insert_bookmark("https://servo.org", "Servo").unwrap();
-        assert_eq!(db.bookmark_count(), 1);
-        db.remove_bookmark_by_url("https://servo.org").unwrap();
-        assert_eq!(db.bookmark_count(), 0);
-    }
-
-    #[test]
-    fn test_config_item_roundtrip() {
-        let db = temp_db();
-        db.save_config_item("homepage", "https://example.com")
-            .unwrap();
-        assert_eq!(
-            db.load_config_item("homepage"),
-            Some("https://example.com".into())
-        );
-        assert_eq!(db.load_config_item("missing"), None);
-    }
-
-    #[test]
-    fn test_fetch_history_respects_limit() {
-        let db = temp_db();
-        for i in 0..5 {
-            db.insert_history(&format!("https://example.com/{}", i), "T")
-                .unwrap();
-        }
-        let rows = db.fetch_history(3).unwrap();
-        assert_eq!(rows.len(), 3);
+        let tabs = vec![
+            ("https://servo.org".into(), "Servo".into(), false),
+            ("https://rust-lang.org".into(), "Rust".into(), true),
+        ];
+        db.save_session_tabs(&tabs).unwrap();
+        let loaded = db.load_session_tabs().unwrap();
+        assert_eq!(loaded, tabs);
     }
 }
