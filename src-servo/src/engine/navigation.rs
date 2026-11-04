@@ -1,4 +1,5 @@
-//! Chuẩn hóa input omnibox thành URL, hỗ trợ công cụ tìm kiếm tùy chỉnh.
+// src-servo/src/engine/navigation.rs
+//! Chuẩn hóa input omnibox thành URL, hỗ trợ IPv4/IPv6, localhost và công cụ tìm kiếm tùy chỉnh (`%s`).
 
 const DEFAULT_SEARCH_ENGINE: &str = "https://search.brave.com/search?q=";
 
@@ -28,11 +29,7 @@ pub fn normalize_url_with_search(input: &str, search_engine: &str) -> String {
         || lower.starts_with("data:")
     {
         if let Some(colon_idx) = input.find(':') {
-            return format!(
-                "{}{}",
-                &lower[..colon_idx],
-                &input[colon_idx..]
-            );
+            return format!("{}{}", &lower[..colon_idx], &input[colon_idx..]);
         }
         return input.to_string();
     }
@@ -51,7 +48,39 @@ pub fn normalize_url_with_search(input: &str, search_engine: &str) -> String {
         search_engine.trim()
     };
 
-    format!("{}{}", engine, urlencoding(input))
+    let encoded_query = urlencoding(input);
+    if engine.contains("%s") {
+        engine.replace("%s", &encoded_query)
+    } else {
+        format!("{}{}", engine, encoded_query)
+    }
+}
+
+/// Tách chuỗi `host_port` thành `(host, Option<port>)`, xử lý chính xác cả IPv6 dạng `[::1]:8080`.
+fn split_host_and_port(host_port: &str) -> Option<(&str, Option<&str>)> {
+    if host_port.starts_with('[') {
+        let close_bracket = host_port.find(']')?;
+        let ipv6_host = &host_port[..=close_bracket];
+        let rest = &host_port[close_bracket + 1..];
+        if rest.is_empty() {
+            return Some((ipv6_host, None));
+        }
+        let port = rest.strip_prefix(':')?;
+        if !is_valid_port(port) {
+            return None;
+        }
+        return Some((ipv6_host, Some(port)));
+    }
+
+    match host_port.split_once(':') {
+        Some((h, p)) => {
+            if !is_valid_port(p) {
+                return None;
+            }
+            Some((h, Some(p)))
+        }
+        None => Some((host_port, None)),
+    }
 }
 
 fn is_local_address(input: &str) -> bool {
@@ -60,28 +89,30 @@ fn is_local_address(input: &str) -> bool {
     }
 
     let host_port = input.split(&['/', '?', '#'][..]).next().unwrap_or(input);
-    let host_port_lower = host_port.to_ascii_lowercase();
-
-    // IPv6 loopback [::1] hoặc [::1]:port
-    if let Some(rest) = host_port_lower.strip_prefix("[::1]") {
-        return rest.is_empty() || rest.strip_prefix(':').map_or(false, is_valid_port);
-    }
-
-    let (host, port_opt) = match host_port_lower.split_once(':') {
-        Some((h, p)) => (h, Some(p)),
-        None => (host_port_lower.as_str(), None),
+    let Some((host, _port)) = split_host_and_port(host_port) else {
+        return false;
     };
 
-    if let Some(port) = port_opt {
-        if !is_valid_port(port) {
-            return false;
-        }
+    let host_lower = host.to_ascii_lowercase();
+    if host_lower == "[::1]"
+        || host_lower == "[0:0:0:0:0:0:0:1]"
+        || host_lower == "localhost"
+        || host_lower.ends_with(".localhost")
+        || host_lower == "0.0.0.0"
+    {
+        return true;
     }
 
-    host == "localhost"
-        || host.ends_with(".localhost")
-        || host == "127.0.0.1"
-        || host == "0.0.0.0"
+    // Kiểm tra dải loopback 127.0.0.0/8
+    let octets: Vec<&str> = host_lower.split('.').collect();
+    if octets.len() == 4
+        && octets[0] == "127"
+        && octets.iter().all(|o| o.parse::<u8>().is_ok())
+    {
+        return true;
+    }
+
+    false
 }
 
 fn is_valid_port(port: &str) -> bool {
@@ -89,28 +120,29 @@ fn is_valid_port(port: &str) -> bool {
 }
 
 fn looks_like_domain_or_url(input: &str) -> bool {
-    if input.contains(char::is_whitespace) || !input.contains('.') {
+    if input.contains(char::is_whitespace) {
         return false;
     }
 
-    // Tách phần host[:port] trước `/`, `?`, `#`
     let host_port = input.split(&['/', '?', '#'][..]).next().unwrap_or(input);
     if host_port.is_empty() {
         return false;
     }
 
-    let (host, port_opt) = match host_port.split_once(':') {
-        Some((h, p)) => (h, Some(p)),
-        None => (host_port, None),
+    let Some((host, _port)) = split_host_and_port(host_port) else {
+        return false;
     };
 
-    if let Some(port) = port_opt {
-        if !is_valid_port(port) {
-            return false;
-        }
+    // Kiểm tra địa chỉ IPv6 dạng [2606:4700:4700::1111]
+    if let Some(inner) = host.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+        return !inner.is_empty()
+            && inner.contains(':')
+            && inner
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.');
     }
 
-    if host.is_empty() || host.starts_with('.') || host.ends_with('.') {
+    if !host.contains('.') || host.starts_with('.') || host.ends_with('.') {
         return false;
     }
 
@@ -163,11 +195,14 @@ mod tests {
     fn test_full_url() {
         assert_eq!(normalize_url("https://example.com"), "https://example.com");
         assert_eq!(normalize_url("http://example.com"), "http://example.com");
-        assert_eq!(normalize_url("HTTPS://Example.com/Path"), "https://Example.com/Path");
+        assert_eq!(
+            normalize_url("HTTPS://Example.com/Path"),
+            "https://Example.com/Path"
+        );
     }
 
     #[test]
-    fn test_domain() {
+    fn test_domain_and_ipv6() {
         assert_eq!(normalize_url("example.com"), "https://example.com");
         assert_eq!(
             normalize_url("github.com/LocShadowVN/kestrel-browser"),
@@ -176,6 +211,10 @@ mod tests {
         assert_eq!(
             normalize_url("192.168.1.1:8080/admin"),
             "https://192.168.1.1:8080/admin"
+        );
+        assert_eq!(
+            normalize_url("[2606:4700:4700::1111]:443/dns-query"),
+            "https://[2606:4700:4700::1111]:443/dns-query"
         );
     }
 
@@ -197,9 +236,18 @@ mod tests {
     }
 
     #[test]
-    fn test_custom_search_engine() {
+    fn test_custom_search_engine_and_placeholder() {
         let url = normalize_url_with_search("rust servo", "https://duckduckgo.com/?q=");
         assert_eq!(url, "https://duckduckgo.com/?q=rust+servo");
+
+        let url_with_placeholder = normalize_url_with_search(
+            "rust servo",
+            "https://en.wikipedia.org/w/index.php?search=%s&title=Special:Search",
+        );
+        assert_eq!(
+            url_with_placeholder,
+            "https://en.wikipedia.org/w/index.php?search=rust+servo&title=Special:Search"
+        );
     }
 
     #[test]
@@ -220,7 +268,14 @@ mod tests {
     fn test_localhost() {
         assert_eq!(normalize_url("localhost"), "http://localhost");
         assert_eq!(normalize_url("localhost:8080"), "http://localhost:8080");
-        assert_eq!(normalize_url("127.0.0.1:3000/api"), "http://127.0.0.1:3000/api");
+        assert_eq!(
+            normalize_url("127.0.0.1:3000/api"),
+            "http://127.0.0.1:3000/api"
+        );
+        assert_eq!(
+            normalize_url("127.0.1.1:5000"),
+            "http://127.0.1.1:5000"
+        );
         assert_eq!(normalize_url("[::1]:5173"), "http://[::1]:5173");
         assert_eq!(normalize_url("localhost.com"), "https://localhost.com");
     }
