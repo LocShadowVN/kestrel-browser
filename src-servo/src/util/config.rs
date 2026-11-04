@@ -1,4 +1,5 @@
-//! Config — wrapper quanh Database, cache trong RAM và chuẩn hóa giá trị hợp lệ.
+// src-servo/src/util/config.rs
+//! Config — wrapper quanh Database, cache trong RAM và đồng bộ trạng thái với Adblock Engine.
 
 use std::cell::RefCell;
 use std::env;
@@ -6,6 +7,7 @@ use std::rc::Rc;
 
 use shared::{AppConfig, DEFAULT_USER_AGENT};
 
+use crate::adblock_rules;
 use crate::storage::database::Database;
 
 pub struct Config {
@@ -44,6 +46,7 @@ impl Config {
             }
         }
 
+        adblock_rules::set_active_level(cached.adblock_level);
         env::set_var("KESTREL_USER_AGENT", &cached.user_agent);
 
         Self {
@@ -127,6 +130,7 @@ impl Config {
             .save_config_item("adblock_level", &l.to_string())
             .map_err(|e| e.to_string())?;
         self.cached.borrow_mut().adblock_level = l;
+        adblock_rules::set_active_level(l);
         Ok(())
     }
 
