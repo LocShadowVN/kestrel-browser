@@ -1,3 +1,4 @@
+// src-servo/src/internal_pages/mod.rs
 //! Quản lý trang nội bộ (`kestrel://`).
 
 pub mod bookmarks;
@@ -24,7 +25,7 @@ pub fn classify(url: &str) -> Option<Page> {
 
     match clean.as_str() {
         "kestrel://home" | "kestrel://newtab" | "kestrel://" | "kestrel:" => Some(Page::Home),
-        "kestrel://settings" => Some(Page::Settings),
+        "kestrel://settings" | "kestrel://about" => Some(Page::Settings),
         "kestrel://history" => Some(Page::History),
         "kestrel://bookmarks" => Some(Page::Bookmarks),
         _ => None,
@@ -40,6 +41,33 @@ pub fn query_string(url: &str) -> Option<&str> {
     without_hash.find('?').map(|i| &without_hash[i + 1..])
 }
 
+pub fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+pub fn sanitize_href(url: &str) -> String {
+    let trimmed = url.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with("https://")
+        || lower.starts_with("http://")
+        || lower.starts_with("kestrel://")
+    {
+        trimmed.to_string()
+    } else if lower.starts_with("javascript:")
+        || lower.starts_with("data:")
+        || lower.starts_with("vbscript:")
+        || lower.starts_with("file:")
+    {
+        "about:blank".to_string()
+    } else {
+        format!("https://{}", trimmed)
+    }
+}
+
 /// JS shim: gửi thông điệp từ trang nội bộ về tiến trình chính Kestrel qua console IPC.
 pub const NAV_SHIM: &str = r#"
 (function () {
@@ -52,7 +80,6 @@ pub const NAV_SHIM: &str = r#"
         window.servoGtk.messageHandlers.kestrel.postMessage(payload);
         return true;
       }
-      // Fallback trực tiếp qua console hook nếu handler shim chưa kịp chạy
       console.log(PREFIX + JSON.stringify({ name: 'kestrel', body: payload }));
       return true;
     } catch (_) {
