@@ -1,5 +1,6 @@
 // src-servo/src/internal_pages/settings.rs
 //! Trang cài đặt nội bộ — kestrel://settings & kestrel://about.
+//! Đồng bộ hóa trạng thái `.active` trên mọi nút chọn khi Restore Defaults hoặc khi sửa tay input.
 
 use crate::internal_pages::{escape_html, NAV_SHIM};
 
@@ -98,9 +99,9 @@ pub fn render_full(
 <title>Kestrel — {title}</title>
 <style>
   :root {{
-    --bg: #111318; --fg: #e6e8f0; --muted: #8a8f9e;
-    --card: #171a22; --card-alt: #12151c; --border: #252936; --border-focus: #555c78;
-    --btn-bg: #e6e8f0; --btn-fg: #111318;
+    --bg: #0e1015; --fg: #e6e8f0; --muted: #8a8f9e;
+    --card: #161922; --card-alt: #11141b; --border: #252936; --border-focus: #555c78;
+    --btn-bg: #e6e8f0; --btn-fg: #0e1015;
   }}
   html.light {{
     --bg: #f4f5f8; --fg: #16181f; --muted: #606575;
@@ -291,14 +292,14 @@ pub fn render_full(
     <div class="actions">
       <button type="submit" class="btn-primary">{save}</button>
       <button type="button" id="reset-btn" class="btn-secondary">{reset}</button>
-      <span class="status" id="status"></span>
+      <span class="status" id="status" data-saved-msg="{saved_msg}" data-cleared-msg="{cleared_msg}"></span>
     </div>
   </form>
 
   <h2 id="about">{about}</h2>
   <div class="about-card" id="about-card">
     <div class="about-row"><span>{version_label}</span><span class="badge">1.0.0-alpha</span></div>
-    <div class="about-row"><span>{engine_label}</span><span>Servo 0.6 + adblock-rust</span></div>
+    <div class="about-row"><span>{engine_label}</span><span>Servo 0.7 + adblock-rust</span></div>
     <div class="about-row"><span>{license_label}</span><span>GPL-3.0</span></div>
     <div class="about-row"><span>{source_label}</span><a href="https://github.com/LocShadowVN/kestrel-browser">GitHub</a></div>
   </div>
@@ -319,6 +320,8 @@ pub fn render_full(
 
   var form = document.getElementById('settings-form');
   var statusEl = document.getElementById('status');
+  var savedMsg = (statusEl && statusEl.getAttribute('data-saved-msg')) || 'Settings applied.';
+  var clearedMsg = (statusEl && statusEl.getAttribute('data-cleared-msg')) || 'History cleared.';
   var searchInput = document.getElementById('search_engine');
   var homeInput = document.getElementById('homepage');
   var uaInput = document.getElementById('user_agent');
@@ -326,6 +329,28 @@ pub fn render_full(
   function showStatus(msg) {{
     if (!statusEl) return;
     statusEl.textContent = '✓ ' + msg;
+  }}
+
+  function syncActiveButtons() {{
+    document.querySelectorAll('#theme-group .seg-btn').forEach(function (b) {{
+      var isDark = b.getAttribute('data-theme') === 'dark';
+      b.classList.toggle('active', isDark === state.dark_theme);
+    }});
+    document.querySelectorAll('#lang-group .seg-btn').forEach(function (b) {{
+      b.classList.toggle('active', b.getAttribute('data-lang') === state.language);
+    }});
+    document.querySelectorAll('#shields-group .shield-card').forEach(function (c) {{
+      var lvl = parseInt(c.getAttribute('data-level') || '1', 10);
+      c.classList.toggle('active', lvl === state.adblock_level);
+    }});
+    var curUa = (uaInput && uaInput.value.trim()) || '';
+    document.querySelectorAll('#ua-group .seg-btn').forEach(function (b) {{
+      b.classList.toggle('active', b.getAttribute('data-ua') === curUa);
+    }});
+    var curSearch = (searchInput && searchInput.value.trim()) || '';
+    document.querySelectorAll('#preset-group .seg-btn').forEach(function (b) {{
+      b.classList.toggle('active', b.getAttribute('data-url') === curSearch);
+    }});
   }}
 
   function pushSettings() {{
@@ -340,59 +365,58 @@ pub fn render_full(
     }};
     if (window.__kestrelSend) {{
       window.__kestrelSend(payload);
-      showStatus('{saved_msg}');
+      showStatus(savedMsg);
     }}
   }}
 
   document.querySelectorAll('#theme-group .seg-btn').forEach(function (btn) {{
     btn.addEventListener('click', function () {{
-      document.querySelectorAll('#theme-group .seg-btn').forEach(function (b) {{ b.classList.remove('active'); }});
-      btn.classList.add('active');
       state.dark_theme = btn.getAttribute('data-theme') === 'dark';
       document.documentElement.className = state.dark_theme ? 'dark' : 'light';
+      syncActiveButtons();
       pushSettings();
     }});
   }});
 
   document.querySelectorAll('#lang-group .seg-btn').forEach(function (btn) {{
     btn.addEventListener('click', function () {{
-      document.querySelectorAll('#lang-group .seg-btn').forEach(function (b) {{ b.classList.remove('active'); }});
-      btn.classList.add('active');
       state.language = btn.getAttribute('data-lang') || 'en';
+      syncActiveButtons();
       pushSettings();
     }});
   }});
 
   document.querySelectorAll('#shields-group .shield-card').forEach(function (card) {{
     card.addEventListener('click', function () {{
-      document.querySelectorAll('#shields-group .shield-card').forEach(function (c) {{ c.classList.remove('active'); }});
-      card.classList.add('active');
       state.adblock_level = parseInt(card.getAttribute('data-level') || '1', 10);
+      syncActiveButtons();
       pushSettings();
     }});
   }});
 
   document.querySelectorAll('#ua-group .seg-btn').forEach(function (btn) {{
     btn.addEventListener('click', function () {{
-      document.querySelectorAll('#ua-group .seg-btn').forEach(function (b) {{ b.classList.remove('active'); }});
-      btn.classList.add('active');
       if (uaInput) uaInput.value = btn.getAttribute('data-ua') || '';
+      syncActiveButtons();
       pushSettings();
     }});
   }});
 
   document.querySelectorAll('#preset-group .seg-btn').forEach(function (btn) {{
     btn.addEventListener('click', function () {{
-      document.querySelectorAll('#preset-group .seg-btn').forEach(function (b) {{ b.classList.remove('active'); }});
-      btn.classList.add('active');
       if (searchInput) searchInput.value = btn.getAttribute('data-url') || '';
+      syncActiveButtons();
       pushSettings();
     }});
   }});
 
+  if (uaInput) uaInput.addEventListener('input', syncActiveButtons);
+  if (searchInput) searchInput.addEventListener('input', syncActiveButtons);
+
   if (form) {{
     form.addEventListener('submit', function (e) {{
       e.preventDefault();
+      syncActiveButtons();
       pushSettings();
     }});
   }}
@@ -407,9 +431,10 @@ pub fn render_full(
       if (homeInput) homeInput.value = DEFAULT_HOME;
       if (searchInput) searchInput.value = DEFAULT_SEARCH;
       if (uaInput) uaInput.value = DEFAULT_UA;
+      syncActiveButtons();
       if (window.__kestrelSend) {{
         window.__kestrelSend({{ action: 'reset-settings' }});
-        showStatus('{saved_msg}');
+        showStatus(savedMsg);
       }}
     }});
   }}
@@ -419,7 +444,7 @@ pub fn render_full(
     clearHistBtn.addEventListener('click', function () {{
       if (window.__kestrelSend) {{
         window.__kestrelSend({{ action: 'clear-history' }});
-        showStatus('{cleared_msg}');
+        showStatus(clearedMsg);
       }}
     }});
   }}
@@ -485,8 +510,8 @@ pub fn render_full(
         clear_history_btn = t("Clear History", "Xóa lịch sử"),
         save = t("Save Changes", "Lưu thay đổi"),
         reset = t("Restore Defaults", "Khôi phục mặc định"),
-        saved_msg = t("Settings applied.", "Đã áp dụng cài đặt."),
-        cleared_msg = t("Browsing history cleared.", "Đã xóa lịch sử duyệt web."),
+        saved_msg = escape_html(&t("Settings applied.", "Đã áp dụng cài đặt.")),
+        cleared_msg = escape_html(&t("Browsing history cleared.", "Đã xóa lịch sử duyệt web.")),
         version_label = t("Version", "Phiên bản"),
         engine_label = t("Engine", "Nhân trình duyệt"),
         license_label = t("License", "Giấy phép"),
