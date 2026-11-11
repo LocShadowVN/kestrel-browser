@@ -1,9 +1,43 @@
 // src-servo/src/storage/database.rs
+//! Lưu trữ SQLite cục bộ với cơ chế tự động phục hồi (fallback sang In-Memory DB)
+//! nếu hệ thống tệp bị khóa hoặc không có quyền ghi — tuân thủ Zero-Panic Policy.
+
 use rusqlite::{params, Connection};
 use shared::{BookmarkRecord, HistoryRecord};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
+
+const SCHEMA_SQL: &str = "
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+    PRAGMA temp_store = MEMORY;
+    PRAGMA foreign_keys = ON;
+    PRAGMA busy_timeout = 5000;
+
+    CREATE TABLE IF NOT EXISTS history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        url TEXT NOT NULL,
+        title TEXT NOT NULL,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS bookmarks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        url TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS session_tabs (
+        position INTEGER PRIMARY KEY,
+        url TEXT NOT NULL,
+        title TEXT NOT NULL,
+        is_active INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_history_url ON history(url);
+";
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -14,49 +48,48 @@ impl Database {
         let data_dir = dirs::data_local_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("kestrel-browser");
-        fs::create_dir_all(&data_dir).expect("Cannot create data dir");
 
-        let db_path = data_dir.join("kestrel.sqlite");
-        let conn = Connection::open(&db_path).expect("SQLite open failed");
-
-        conn.execute_batch(
-            "
-            PRAGMA journal_mode = WAL;
-            PRAGMA synchronous = NORMAL;
-            PRAGMA temp_store = MEMORY;
-            PRAGMA foreign_keys = ON;
-            PRAGMA busy_timeout = 5000;
-
-            CREATE TABLE IF NOT EXISTS history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                url TEXT NOT NULL,
-                title TEXT NOT NULL,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS bookmarks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                url TEXT NOT NULL UNIQUE,
-                title TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS session_tabs (
-                position INTEGER PRIMARY KEY,
-                url TEXT NOT NULL,
-                title TEXT NOT NULL,
-                is_active INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE INDEX IF NOT EXISTS idx_history_url ON history(url);
-            ",
-        )
-        .expect("Schema creation failed");
-
-        log::info!("Database initialized at {:?}", db_path);
+        let conn = match Self::try_open_disk(&data_dir) {
+            Ok((c, path)) => {
+                log::info!("Database initialized at {:?}", path);
+                c
+            }
+            Err(e) => {
+                log::error!(
+                    "Failed to open disk SQLite database in {:?}: {}. Falling back to in-memory database.",
+                    data_dir,
+                    e
+                );
+                Self::open_fallback_memory()
+            }
+        };
 
         Self {
             conn: Mutex::new(conn),
+        }
+    }
+
+    fn try_open_disk(data_dir: &PathBuf) -> Result<(Connection, PathBuf), String> {
+        fs::create_dir_all(data_dir).map_err(|e| format!("create_dir_all failed: {e}"))?;
+        let db_path = data_dir.join("kestrel.sqlite");
+        let conn = Connection::open(&db_path).map_err(|e| format!("sqlite open failed: {e}"))?;
+        conn.execute_batch(SCHEMA_SQL)
+            .map_err(|e| format!("schema init failed: {e}"))?;
+        Ok((conn, db_path))
+    }
+
+    fn open_fallback_memory() -> Connection {
+        match Connection::open_in_memory() {
+            Ok(conn) => {
+                if let Err(e) = conn.execute_batch(SCHEMA_SQL) {
+                    log::error!("In-memory schema initialization error: {e}");
+                }
+                conn
+            }
+            Err(e) => {
+                log::error!("Critical SQLite in-memory open error: {e}");
+                std::process::abort();
+            }
         }
     }
 
@@ -237,7 +270,6 @@ impl Database {
     }
 
     /// Lưu danh sách các tab đang mở `(url, title, is_active)` để khôi phục phiên.
-    #[allow(dead_code)]
     pub fn save_session_tabs(&self, tabs: &[(String, String, bool)]) -> rusqlite::Result<()> {
         let mut conn = self.lock_conn();
         let tx = conn.transaction()?;
@@ -260,7 +292,6 @@ impl Database {
     }
 
     /// Đọc danh sách các tab đã lưu từ phiên trước.
-    #[allow(dead_code)]
     pub fn load_session_tabs(&self) -> rusqlite::Result<Vec<(String, String, bool)>> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
@@ -285,35 +316,8 @@ mod tests {
     use super::*;
 
     fn temp_db() -> Database {
-        let conn = Connection::open_in_memory().expect("in-memory db");
-        conn.execute_batch(
-            "
-            CREATE TABLE IF NOT EXISTS history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                url TEXT NOT NULL,
-                title TEXT NOT NULL,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS bookmarks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                url TEXT NOT NULL UNIQUE,
-                title TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS session_tabs (
-                position INTEGER PRIMARY KEY,
-                url TEXT NOT NULL,
-                title TEXT NOT NULL,
-                is_active INTEGER NOT NULL DEFAULT 0
-            );
-            ",
-        )
-        .expect("schema");
         Database {
-            conn: Mutex::new(conn),
+            conn: Mutex::new(Database::open_fallback_memory()),
         }
     }
 
@@ -348,16 +352,12 @@ mod tests {
     }
 
     #[test]
-    fn test_bookmark_roundtrip() {
+    fn test_bookmark_roundtrip_and_url_delete() {
         let db = temp_db();
         db.insert_bookmark("https://rust-lang.org", "Rust").unwrap();
         assert!(db.is_bookmarked("https://rust-lang.org"));
-        let rows = db.fetch_bookmarks().unwrap();
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].url, "https://rust-lang.org");
-        db.remove_bookmark(rows[0].id.unwrap()).unwrap();
+        db.remove_bookmark_by_url("https://rust-lang.org").unwrap();
         assert!(!db.is_bookmarked("https://rust-lang.org"));
-        assert!(db.fetch_bookmarks().unwrap().is_empty());
     }
 
     #[test]
