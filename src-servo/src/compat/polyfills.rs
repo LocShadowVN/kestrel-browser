@@ -1,8 +1,8 @@
 // src-servo/src/compat/polyfills.rs
-//! Polyfill JavaScript chuẩn hóa (v8) + Anti-Adblock Defuser + Chrome Spoofing + Lazy-Load Hydrator.
+//! Polyfill JavaScript chuẩn hóa (v9) + Anti-Adblock Defuser + Chrome Spoofing + Lazy-Load Hydrator.
 //! - Hỗ trợ `Ctrl+Click` / `Middle-Click` vào thẻ `<a>` để mở link trong tab mới (`open-new-tab`).
-//! - Tôn trọng trạng thái Kestrel Shields (`window.__kestrelShieldsLevel`).
-//! - Tích hợp Find-in-Page (`window.__kestrelFind`) và Page Zoom (`window.__kestrelSetZoom`).
+//! - Đồng bộ kênh IPC dự phòng (`__servo_gtk_msg__`) với `NAV_SHIM`.
+//! - Bổ sung `MutationObserver` có điều tiết (throttled) để dọn quảng cáo động & hydrate ảnh trên SPA.
 
 pub const POLYFILL_SCRIPT: &str = r#"
 (function () {
@@ -77,13 +77,18 @@ pub const POLYFILL_SCRIPT: &str = r#"
         return true;
     }
 
+    var IPC_PREFIX = '__servo_gtk_msg__';
     function postToKestrel(payload) {
         try {
             if (window.servoGtk && window.servoGtk.messageHandlers &&
                 window.servoGtk.messageHandlers.kestrel) {
-                window.servoGtk.messageHandlers.kestrel.postMessage(JSON.stringify(payload));
+                window.servoGtk.messageHandlers.kestrel.postMessage(
+                    typeof payload === 'string' ? payload : JSON.stringify(payload)
+                );
                 return true;
             }
+            console.log(IPC_PREFIX + JSON.stringify({ name: 'kestrel', body: payload }));
+            return true;
         } catch (_) {}
         return false;
     }
@@ -454,8 +459,35 @@ pub const POLYFILL_SCRIPT: &str = r#"
         setTimeout(scrubAdsAndHydrate, 400);
         setTimeout(scrubAdsAndHydrate, 1200);
         setTimeout(scrubAdsAndHydrate, 2800);
+
+        var scrubScheduled = false;
+        function scheduleScrub() {
+            if (scrubScheduled) return;
+            scrubScheduled = true;
+            setTimeout(function () {
+                scrubScheduled = false;
+                scrubAdsAndHydrate();
+            }, 450);
+        }
+
+        function attachMutationScrubber() {
+            if (typeof MutationObserver === 'function' && document.documentElement) {
+                try {
+                    var mo = new MutationObserver(scheduleScrub);
+                    mo.observe(document.documentElement, { childList: true, subtree: true });
+                } catch (_) {}
+            }
+        }
+
         if (typeof document !== 'undefined') {
-            document.addEventListener('DOMContentLoaded', scrubAdsAndHydrate, { once: true });
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', function () {
+                    scrubAdsAndHydrate();
+                    attachMutationScrubber();
+                }, { once: true });
+            } else {
+                attachMutationScrubber();
+            }
         }
         if (typeof window !== 'undefined') {
             window.addEventListener('load', function () {
