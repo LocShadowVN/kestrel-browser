@@ -1,11 +1,16 @@
 // src-servo/src/chrome/tabbar.rs
-//! TabBar — Quản lý các tab bằng `tab_id: u64` duy nhất, nút `+` nằm sát bên cạnh tab như Brave/Chrome.
+//! TabBar — Quản lý các tab bằng `tab_id: u64` duy nhất, nút `+` nằm sát bên cạnh tab như Brave/Chrome,
+//! tích hợp cuộn ngang mượt mà khi lăn bánh xe chuột dọc trên thanh tab.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use gtk4::glib;
 use gtk4::prelude::*;
-use gtk4::{Box as GtkBox, Button, Notebook, Orientation, PolicyType, ScrolledWindow, Widget};
+use gtk4::{
+    Box as GtkBox, Button, EventControllerScroll, EventControllerScrollFlags, Notebook,
+    Orientation, PolicyType, ScrolledWindow, Widget,
+};
 
 use crate::chrome::icons;
 use crate::chrome::tab_widget::TabWidget;
@@ -53,6 +58,25 @@ impl TabBar {
             .build();
         scroll.add_css_class("kestrel-tabs-scroll");
         scroll.set_child(Some(&tabs_area));
+
+        // Hỗ trợ lăn bánh xe chuột dọc để trượt ngang thanh Tab như Brave/Chrome
+        let scroll_ctrl = EventControllerScroll::new(EventControllerScrollFlags::BOTH_AXES);
+        {
+            let scroll_c = scroll.clone();
+            scroll_ctrl.connect_scroll(move |_ctrl, dx, dy| {
+                let hadj = scroll_c.hadjustment();
+                let delta = if dy.abs() > dx.abs() { dy } else { dx };
+                if delta.abs() > f64::EPSILON {
+                    let step = 48.0;
+                    let upper = (hadj.upper() - hadj.page_size()).max(hadj.lower());
+                    let next = (hadj.value() + delta * step).clamp(hadj.lower(), upper);
+                    hadj.set_value(next);
+                    return glib::Propagation::Stop;
+                }
+                glib::Propagation::Proceed
+            });
+        }
+        scroll.add_controller(scroll_ctrl);
 
         strip.append(&scroll);
 
