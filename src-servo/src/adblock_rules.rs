@@ -14,7 +14,7 @@ include!(concat!(env!("OUT_DIR"), "/kestrel_filters.rs"));
 
 static BLOB_STANDARD: OnceLock<Vec<u8>> = OnceLock::new();
 static BLOB_AGGRESSIVE: OnceLock<Vec<u8>> = OnceLock::new();
-static ACTIVE_LEVEL: AtomicU8 = AtomicU8::new(2);
+static ACTIVE_LEVEL: AtomicU8 = AtomicU8::new(1);
 
 const MIN_BLOB_BYTES: usize = 4096;
 
@@ -23,9 +23,14 @@ pub fn set_active_level(level: u8) {
     ACTIVE_LEVEL.store(level.min(2), Ordering::Relaxed);
 }
 
+/// Đọc mức độ chặn đang kích hoạt hiện tại.
+pub fn get_active_level() -> u8 {
+    ACTIVE_LEVEL.load(Ordering::Relaxed)
+}
+
 /// Trả về adblock engine đã serialize theo level đang kích hoạt (chờ nếu đang build).
 pub fn get_blob() -> &'static [u8] {
-    let level = ACTIVE_LEVEL.load(Ordering::Relaxed);
+    let level = get_active_level();
     if level == 0 {
         return &[];
     }
@@ -48,7 +53,7 @@ pub fn get_blob_for_level(level: u8) -> &'static [u8] {
 /// Lấy adblock blob không khóa luồng UI nếu đang biên dịch lần đầu;
 /// nếu đã có sẵn file cache trên đĩa thì nạp tức thì (< 1ms).
 pub fn try_get_blob() -> Option<&'static [u8]> {
-    let level = ACTIVE_LEVEL.load(Ordering::Relaxed);
+    let level = get_active_level();
     try_get_blob_for_level(level)
 }
 
@@ -90,8 +95,8 @@ fn cache_dir() -> PathBuf {
 
 fn blob_path_for_level(level: u8) -> PathBuf {
     match level {
-        1 => cache_dir().join("adblock_std_v3.blob"),
-        _ => cache_dir().join("adblock_net_v3.blob"),
+        1 => cache_dir().join("adblock_std_v4.blob"),
+        _ => cache_dir().join("adblock_net_v4.blob"),
     }
 }
 
@@ -118,9 +123,28 @@ fn is_cosmetic_or_comment(line: &str) -> bool {
         || l.contains("+js(")
 }
 
+#[allow(dead_code)]
 fn filter_network_only_rules(raw_rules: Vec<String>) -> Vec<String> {
     raw_rules
         .into_iter()
+        .filter(|line| !is_cosmetic_or_comment(line))
+        .collect()
+}
+
+/// Thu thập lát cắt `&'static str` trực tiếp từ vùng nhớ tĩnh của binary mà không cấp phát `String`.
+fn borrowed_network_rules_for_level(level: u8) -> Vec<&'static str> {
+    let iter: Box<dyn Iterator<Item = &'static str>> = if level == 1 {
+        Box::new(EASYLIST.lines().chain(EASYPRIVACY.lines()))
+    } else {
+        Box::new(
+            EASYLIST
+                .lines()
+                .chain(EASYPRIVACY.lines())
+                .chain(FANBOY_ANNOYANCES.lines()),
+        )
+    };
+
+    iter.map(str::trim)
         .filter(|line| !is_cosmetic_or_comment(line))
         .collect()
 }
@@ -137,17 +161,13 @@ fn build_or_load_blob_for_level(level: u8) -> Vec<u8> {
         "Building optimized network adblock engine (level {})...",
         normalized_level
     );
-    let raw_rules = rules_for_level(normalized_level);
-    if raw_rules.is_empty() {
-        log::error!("No adblock rules embedded; adblock disabled");
+
+    let rules = borrowed_network_rules_for_level(normalized_level);
+    if rules.is_empty() {
+        log::error!("No valid network rules embedded; adblock disabled");
         return Vec::new();
     }
 
-    let rules = filter_network_only_rules(raw_rules);
-    if rules.is_empty() {
-        log::error!("No valid network rules after filtering; adblock disabled");
-        return Vec::new();
-    }
     log::info!(
         "Compiling {} network filter rules for level {}...",
         rules.len(),
@@ -222,7 +242,10 @@ fn write_blob_atomically(path: &Path, blob: &[u8], level: u8) {
         log::warn!("Failed to finalize adblock blob cache at {path:?}: {e}");
         let _ = fs::remove_file(&tmp_path);
     } else {
-        log::info!("Cached adblock blob (level {}) atomically at {path:?}", level);
+        log::info!(
+            "Cached adblock blob (level {}) atomically at {path:?}",
+            level
+        );
     }
 }
 
@@ -248,5 +271,15 @@ mod tests {
             filtered[1],
             "||googlesyndication.com/pagead/js/adsbygoogle.js"
         );
+    }
+
+    #[test]
+    fn test_active_level_clamping() {
+        set_active_level(99);
+        assert_eq!(get_active_level(), 2);
+        set_active_level(0);
+        assert_eq!(get_active_level(), 0);
+        set_active_level(1);
+        assert_eq!(get_active_level(), 1);
     }
 }
