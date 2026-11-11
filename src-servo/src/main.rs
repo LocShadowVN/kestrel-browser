@@ -44,7 +44,7 @@ fn should_enable_dri_prime() -> bool {
 }
 
 /// Thiết lập biến môi trường GPU phần cứng và bộ đệm Shader
-/// mà KHÔNG tắt VSync để tránh hiện tượng tiến trình con làm ngập ống IPC của GTK4.
+/// trên luồng chính trước khi bất kỳ tiến trình con hay luồng nền nào được tạo.
 fn init_gpu_acceleration_env() {
     if env::var_os("LIBGL_ALWAYS_SOFTWARE").is_none() {
         env::set_var("LIBGL_ALWAYS_SOFTWARE", "0");
@@ -92,28 +92,45 @@ fn main() -> glib::ExitCode {
 
     log::info!("Kestrel Browser starting (Servo engine + Hardware GPU Acceleration)");
 
+    // Khởi tạo Database & Config TRƯỚC khi tạo luồng nền để:
+    // 1. Thiết lập KESTREL_USER_AGENT hoàn toàn trên single-thread (tránh data race của setenv).
+    // 2. Xác định chính xác adblock_level đang kích hoạt của người dùng để ưu tiên nạp/biên dịch trước.
+    let app = app::KestrelApp::new();
+    let preferred_level = adblock_rules::get_active_level();
+
     std::thread::Builder::new()
         .name("kestrel-adblock-compiler".into())
-        .spawn(|| {
-            let agg_blob = adblock_rules::get_blob_for_level(2);
-            if agg_blob.is_empty() {
-                log::warn!("Adblock blob empty; network adblock will be unavailable");
+        .spawn(move || {
+            let (first_level, second_level) = if preferred_level == 1 {
+                (1u8, 2u8)
+            } else {
+                (2u8, 1u8)
+            };
+
+            let first_blob = adblock_rules::get_blob_for_level(first_level);
+            if first_blob.is_empty() {
+                log::warn!(
+                    "Adblock level {} blob empty; network adblock may be unavailable",
+                    first_level
+                );
             } else {
                 log::info!(
-                    "Adblock Aggressive blob ready ({} KB)",
-                    agg_blob.len() / 1024
+                    "Adblock primary blob (level {}) ready ({} KB)",
+                    first_level,
+                    first_blob.len() / 1024
                 );
             }
-            let std_blob = adblock_rules::get_blob_for_level(1);
-            if !std_blob.is_empty() {
+
+            let second_blob = adblock_rules::get_blob_for_level(second_level);
+            if !second_blob.is_empty() {
                 log::info!(
-                    "Adblock Standard blob ready ({} KB)",
-                    std_blob.len() / 1024
+                    "Adblock secondary blob (level {}) ready ({} KB)",
+                    second_level,
+                    second_blob.len() / 1024
                 );
             }
         })
         .ok();
 
-    let app = app::KestrelApp::new();
     app.run()
 }
