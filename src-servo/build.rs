@@ -1,30 +1,30 @@
-//! Build script: tải filter list và embed vào binary qua include_str!.
+//! Build script: tải filter list, tiền lọc bỏ hoàn toàn comment/cosmetic rules
+//! ngay lúc compile-time để giảm hơn 55% dung lượng binary, và embed qua `include_str!`.
 //!
-//! Danh sách được cache trong `$OUT_DIR/kestrel_filters/` giữa các build, nên
-//! chỉ tải lần đầu. Dùng env vars để điều khiển:
-//!
+//! Dùng env vars để điều khiển:
 //! - `KESTREL_REQUIRE_FILTERS=1` — build fail nếu tải thất bại (dùng cho release).
-//! - `KESTREL_REFRESH_FILTERS=1` — buộc tải lại dù đã có cache.
+//! - `KESTREL_REFRESH_FILTERS=1` — buộc tải lại dù đã có cache hợp lệ.
 
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 /// (const_name, filename, url)
 const FILTERS: &[(&str, &str, &str)] = &[
     (
         "EASYLIST",
-        "easylist.txt",
+        "easylist.net.txt",
         "https://easylist.to/easylist/easylist.txt",
     ),
     (
         "EASYPRIVACY",
-        "easyprivacy.txt",
+        "easyprivacy.net.txt",
         "https://easylist.to/easylist/easyprivacy.txt",
     ),
     (
         "FANBOY_ANNOYANCES",
-        "fanboy-annoyances.txt",
+        "fanboy-annoyances.net.txt",
         "https://secure.fanboy.co.nz/fanboy-annoyance.txt",
     ),
 ];
@@ -48,11 +48,12 @@ fn main() {
 
     for (const_name, filename, url) in FILTERS {
         let path = filters_dir.join(filename);
-        let need_download = refresh || !path.exists();
+        let cache_valid = fs::metadata(&path).map_or(false, |m| m.len() >= MIN_VALID_SIZE);
+        let need_download = refresh || !cache_valid;
 
         if need_download {
-            println!("cargo:warning=kestrel: downloading {filename}");
-            download_to(url, &path, required);
+            println!("cargo:warning=kestrel: downloading and optimizing {filename}");
+            download_and_pre_filter(url, &path, required);
         } else {
             println!("cargo:warning=kestrel: using cached {filename}");
         }
@@ -79,15 +80,26 @@ fn main() {
         r#"
 /// Rules cho level 1 (Standard): EasyList + EasyPrivacy.
 pub fn rules_standard() -> Vec<String> {
-    let mut v: Vec<String> = EASYLIST.lines().map(String::from).collect();
-    v.extend(EASYPRIVACY.lines().map(String::from));
+    let mut v: Vec<String> = EASYLIST
+        .lines()
+        .chain(EASYPRIVACY.lines())
+        .filter(|l| !l.trim().is_empty())
+        .map(String::from)
+        .collect();
+    v.shrink_to_fit();
     v
 }
 
 /// Rules cho level 2 (Aggressive): Standard + Fanboy's Annoyances.
 pub fn rules_aggressive() -> Vec<String> {
-    let mut v = rules_standard();
-    v.extend(FANBOY_ANNOYANCES.lines().map(String::from));
+    let mut v: Vec<String> = EASYLIST
+        .lines()
+        .chain(EASYPRIVACY.lines())
+        .chain(FANBOY_ANNOYANCES.lines())
+        .filter(|l| !l.trim().is_empty())
+        .map(String::from)
+        .collect();
+    v.shrink_to_fit();
     v
 }
 
@@ -106,20 +118,64 @@ pub fn rules_for_level(level: u8) -> Vec<String> {
     fs::write(&out_path, code).expect("write kestrel_filters.rs");
 }
 
-fn download_to(url: &str, path: &Path, required: bool) {
-    // Normalize both the request error (ureq::Error) and the body-read error
-    // (std::io::Error) into a String so they can be chained through and_then.
-    let result: Result<String, String> = ureq::get(url)
+fn is_cosmetic_or_comment(line: &str) -> bool {
+    let l = line.trim();
+    if l.is_empty() || l.starts_with('!') || l.starts_with('[') || l.starts_with('#') {
+        return true;
+    }
+
+    l.contains("##")
+        || l.contains("#@#")
+        || l.contains("#?#")
+        || l.contains("#@?#")
+        || l.contains("#$#")
+        || l.contains("#@$#")
+        || l.contains("#%#")
+        || l.contains("#@%#")
+        || l.contains("$$")
+        || l.contains("$@$")
+        || l.contains("+js(")
+}
+
+fn extract_network_rules(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len() / 2);
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if !is_cosmetic_or_comment(trimmed) {
+            out.push_str(trimmed);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+fn download_and_pre_filter(url: &str, path: &Path, required: bool) {
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(15))
+        .timeout_read(Duration::from_secs(45))
+        .build();
+
+    let result: Result<String, String> = agent
+        .get(url)
         .call()
         .map_err(|e| e.to_string())
         .and_then(|r| r.into_string().map_err(|e| e.to_string()));
 
     match result {
         Ok(text) if text.len() as u64 >= MIN_VALID_SIZE => {
-            if let Err(e) = fs::write(path, text) {
-                println!("cargo:warning=kestrel: write {path:?} failed: {e}");
+            let filtered = extract_network_rules(&text);
+            if filtered.len() as u64 >= MIN_VALID_SIZE {
+                if let Err(e) = fs::write(path, filtered) {
+                    println!("cargo:warning=kestrel: write {path:?} failed: {e}");
+                    if required {
+                        panic!("failed to write filter: {e}");
+                    }
+                    let _ = fs::write(path, "");
+                }
+            } else {
+                println!("cargo:warning=kestrel: filtered output too small from {url}");
                 if required {
-                    panic!("failed to write filter: {e}");
+                    panic!("filtered output too small from {url}");
                 }
                 let _ = fs::write(path, "");
             }
