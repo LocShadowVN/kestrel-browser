@@ -4,10 +4,12 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+use gtk4::gdk;
+use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
-    Box as GtkBox, Button, Entry, Image, Label, MenuButton, Orientation, Popover, ProgressBar,
-    Revealer, RevealerTransitionType, Separator,
+    Box as GtkBox, Button, Entry, EventControllerKey, Image, Label, MenuButton, Orientation,
+    Popover, ProgressBar, Revealer, RevealerTransitionType, Separator,
 };
 
 use crate::chrome::adblock_button::{AdblockButton, AdblockLevel};
@@ -165,7 +167,7 @@ impl Toolbar {
         progress.set_fraction(0.0);
         progress.set_visible(false);
 
-        // --- Thanh Tìm trong trang (Find in Page — Ctrl+F) ---
+        // --- Thanh Tìm trong trang (Find in Page — Ctrl+F) với Icon SVG đồng bộ ---
         let find_revealer = Revealer::builder()
             .transition_type(RevealerTransitionType::SlideDown)
             .transition_duration(120)
@@ -182,13 +184,21 @@ impl Toolbar {
             .build();
         find_entry.add_css_class("kestrel-find-entry");
 
-        let find_prev = Button::with_label("↑");
+        let find_prev = icons::svg_button(
+            icons::CHEVRON_UP,
+            "go-up-symbolic",
+            15,
+            "Previous match (Shift+Enter)",
+        );
         find_prev.add_css_class("kestrel-toolbar-button");
-        find_prev.set_tooltip_text(Some("Previous match (Shift+Enter)"));
 
-        let find_next = Button::with_label("↓");
+        let find_next = icons::svg_button(
+            icons::CHEVRON_DOWN,
+            "go-down-symbolic",
+            15,
+            "Next match (Enter)",
+        );
         find_next.add_css_class("kestrel-toolbar-button");
-        find_next.set_tooltip_text(Some("Next match (Enter)"));
 
         let find_close = icons::svg_button(
             icons::CLOSE,
@@ -256,25 +266,21 @@ impl Toolbar {
         self.adblock.set_level(level);
     }
 
-    #[allow(dead_code)]
     pub fn set_nav_state(&self, can_go_back: bool, can_go_forward: bool) {
         self.back.set_sensitive(can_go_back);
         self.forward.set_sensitive(can_go_forward);
     }
 
-    #[allow(dead_code)]
     pub fn show_find_bar(&self) {
         self.find_revealer.set_reveal_child(true);
         self.find_entry.grab_focus();
         self.find_entry.select_region(0, -1);
     }
 
-    #[allow(dead_code)]
     pub fn hide_find_bar(&self) {
         self.find_revealer.set_reveal_child(false);
     }
 
-    #[allow(dead_code)]
     pub fn toggle_find_bar(&self) {
         if self.find_revealer.reveals_child() {
             self.hide_find_bar();
@@ -283,7 +289,6 @@ impl Toolbar {
         }
     }
 
-    #[allow(dead_code)]
     pub fn on_find<F: Fn(&str, bool) + 'static>(&self, cb: F) {
         let cb = Rc::new(cb);
 
@@ -293,6 +298,28 @@ impl Toolbar {
                 let text = entry.text().to_string();
                 cb_c(&text, false);
             });
+        }
+        {
+            let cb_c = cb.clone();
+            let entry_c = self.find_entry.clone();
+            let rev_c = self.find_revealer.clone();
+            let key_ctrl = EventControllerKey::new();
+            key_ctrl.connect_key_pressed(move |_ctrl, keyval, _keycode, state| {
+                if keyval == gdk::Key::Escape {
+                    rev_c.set_reveal_child(false);
+                    cb_c("", false);
+                    return glib::Propagation::Stop;
+                }
+                if (keyval == gdk::Key::Return || keyval == gdk::Key::KP_Enter)
+                    && state.contains(gdk::ModifierType::SHIFT_MASK)
+                {
+                    let text = entry_c.text().to_string();
+                    cb_c(&text, true);
+                    return glib::Propagation::Stop;
+                }
+                glib::Propagation::Proceed
+            });
+            self.find_entry.add_controller(key_ctrl);
         }
         {
             let cb_c = cb.clone();
