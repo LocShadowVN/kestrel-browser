@@ -1,7 +1,7 @@
 //! Trang chủ nội bộ — kestrel://home.
-//! Thiết kế Dashboard kiểu Brave với thanh thống kê Shields trực quan và lối tắt Quick Access hoạt động tức thì.
+//! Thiết kế Dashboard Monochrome chuẩn Brave với thanh thống kê Shields trực quan và lối tắt Quick Access.
 
-use crate::internal_pages::NAV_SHIM;
+use crate::internal_pages::{escape_html, NAV_SHIM};
 
 #[allow(dead_code)]
 pub fn render(
@@ -23,6 +23,7 @@ pub fn render_with_stats(
     total_blocked: u64,
 ) -> String {
     let vi = lang == "vi";
+    let safe_lang = if vi { "vi" } else { "en" };
     let theme_class = if dark { "dark" } else { "light" };
 
     let t = |en: &str, vn: &str| -> String {
@@ -50,13 +51,13 @@ pub fn render_with_stats(
 <title>Kestrel — {title}</title>
 <style>
   :root {{
-    --bg: #111318;
+    --bg: #0e1015;
     --fg: #e8eaf2;
-    --muted: #868b9e;
-    --card: #171a22;
-    --card-hover: #1e222d;
-    --border: #252936;
-    --border-hover: #3f465c;
+    --muted: #84899c;
+    --card: #161922;
+    --card-hover: #1d212d;
+    --border: #242836;
+    --border-hover: #3e455b;
   }}
   html.light {{
     --bg: #f4f5f8;
@@ -229,7 +230,7 @@ pub fn render_with_stats(
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
     color: var(--fg);
     flex-shrink: 0;
@@ -332,7 +333,9 @@ pub fn render_with_stats(
       <div class="site-info"><div class="site-name">Rust</div><div class="site-domain">rust-lang.org</div></div>
     </a>
     <a class="site-tile" href="kestrel://settings">
-      <div class="site-badge">⚙</div>
+      <div class="site-badge">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </div>
       <div class="site-info"><div class="site-name">{settings_card}</div><div class="site-domain">kestrel://settings</div></div>
     </a>
   </div>
@@ -382,7 +385,7 @@ pub fn render_with_stats(
   </script>
 </body>
 </html>"#,
-        lang = lang,
+        lang = escape_html(safe_lang),
         theme_class = theme_class,
         title = t("New Tab", "Tab mới"),
         total_blocked = total_blocked,
