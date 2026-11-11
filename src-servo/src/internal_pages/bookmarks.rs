@@ -1,5 +1,7 @@
 // src-servo/src/internal_pages/bookmarks.rs
 //! Trang bookmark nội bộ — kestrel://bookmarks.
+//! Sửa lỗi không gửi được lệnh xóa khi người dùng xóa bookmark vừa mới thêm qua form,
+//! đồng bộ hóa hoàn toàn icon SVG vector đơn sắc cho các mục tạo động trên DOM.
 
 use crate::internal_pages::{escape_html, sanitize_href, NAV_SHIM};
 
@@ -24,7 +26,7 @@ pub fn render(records: &[(i64, String, String)], lang: &str, dark: bool) -> Stri
   <svg class="bm-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
   <a class="title" href="{href}">{title}</a>
   <span class="url">{url_disp}</span>
-  <button class="remove" data-id="{id}" title="Remove">
+  <button class="remove" data-id="{id}" data-url="{url_attr}" title="Remove">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
   </button>
 </li>"#,
@@ -32,6 +34,7 @@ pub fn render(records: &[(i64, String, String)], lang: &str, dark: bool) -> Stri
             href = escape_html(&safe_url),
             title = escape_html(display_title),
             url_disp = escape_html(url),
+            url_attr = escape_html(url),
             search_text = escape_html(&format!(
                 "{} {}",
                 display_title.to_lowercase(),
@@ -50,9 +53,9 @@ pub fn render(records: &[(i64, String, String)], lang: &str, dark: bool) -> Stri
 <title>Kestrel — {heading}</title>
 <style>
   :root {{
-    --bg: #111318; --fg: #e6e8f0; --muted: #8a8f9e;
-    --card: #171a22; --border: #252936; --border-focus: #4a5068;
-    --btn-bg: #e6e8f0; --btn-fg: #111318;
+    --bg: #0e1015; --fg: #e6e8f0; --muted: #8a8f9e;
+    --card: #161922; --border: #252936; --border-focus: #4a5068;
+    --btn-bg: #e6e8f0; --btn-fg: #0e1015;
   }}
   html.light {{
     --bg: #f4f5f8; --fg: #16181f; --muted: #606575;
@@ -170,9 +173,26 @@ pub fn render(records: &[(i64, String, String)], lang: &str, dark: bool) -> Stri
 
       function prependBookmarkDom(title, url) {{
         if (!listEl) return;
+        var existingBtns = listEl.querySelectorAll('.remove');
+        for (var i = 0; i < existingBtns.length; i++) {{
+          if (existingBtns[i].getAttribute('data-url') === url) {{
+            var existingLi = existingBtns[i].closest('.item');
+            if (existingLi) {{
+              var titleLink = existingLi.querySelector('.title');
+              if (titleLink) titleLink.textContent = title;
+              existingLi.setAttribute('data-search', (title + ' ' + url).toLowerCase());
+              return;
+            }}
+          }}
+        }}
+
         var li = document.createElement('li');
         li.className = 'item';
         li.setAttribute('data-search', (title + ' ' + url).toLowerCase());
+
+        var iconWrap = document.createElement('span');
+        iconWrap.innerHTML = '<svg class="bm-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>';
+        if (iconWrap.firstChild) li.appendChild(iconWrap.firstChild);
 
         var a = document.createElement('a');
         a.className = 'title';
@@ -187,7 +207,7 @@ pub fn render(records: &[(i64, String, String)], lang: &str, dark: bool) -> Stri
         btn.className = 'remove';
         btn.setAttribute('data-url', url);
         btn.title = 'Remove';
-        btn.textContent = '✕';
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
 
         li.appendChild(a);
         li.appendChild(span);
@@ -201,8 +221,12 @@ pub fn render(records: &[(i64, String, String)], lang: &str, dark: bool) -> Stri
         if (!btn) return;
         e.preventDefault();
         var idAttr = btn.getAttribute('data-id');
-        if (idAttr && window.__kestrelSend) {{
-          window.__kestrelSend({{ action: 'remove-bookmark', id: parseInt(idAttr, 10) }});
+        var urlAttr = btn.getAttribute('data-url');
+        if (window.__kestrelSend) {{
+          var payload = {{ action: 'remove-bookmark' }};
+          if (idAttr) payload.id = parseInt(idAttr, 10);
+          if (urlAttr) payload.url = urlAttr;
+          window.__kestrelSend(payload);
         }}
         var li = btn.closest('.item');
         if (li) li.remove();
