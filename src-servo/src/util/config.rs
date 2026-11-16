@@ -1,8 +1,8 @@
 // src-servo/src/util/config.rs
+#![forbid(unsafe_code)]
 //! Config — wrapper quanh Database, cache trong RAM và đồng bộ trạng thái với Adblock Engine.
 
 use std::cell::RefCell;
-use std::env;
 use std::rc::Rc;
 
 use shared::{AppConfig, DEFAULT_USER_AGENT};
@@ -45,9 +45,11 @@ impl Config {
                 cached.user_agent = trimmed.to_string();
             }
         }
+        if let Some(v) = db.load_config_item("restore_session") {
+            cached.restore_session = v != "false";
+        }
 
         adblock_rules::set_active_level(cached.adblock_level);
-        env::set_var("KESTREL_USER_AGENT", &cached.user_agent);
 
         Self {
             db,
@@ -77,6 +79,10 @@ impl Config {
 
     pub fn user_agent(&self) -> String {
         self.cached.borrow().user_agent.clone()
+    }
+
+    pub fn restore_session(&self) -> bool {
+        self.cached.borrow().restore_session
     }
 
     pub fn set_homepage(&self, value: &str) -> Result<(), String> {
@@ -144,7 +150,27 @@ impl Config {
             .save_config_item("user_agent", v)
             .map_err(|e| e.to_string())?;
         self.cached.borrow_mut().user_agent = v.to_string();
-        env::set_var("KESTREL_USER_AGENT", v);
+        Ok(())
+    }
+
+    pub fn set_restore_session(&self, value: bool) -> Result<(), String> {
+        let s = if value { "true" } else { "false" };
+        self.db
+            .save_config_item("restore_session", s)
+            .map_err(|e| e.to_string())?;
+        self.cached.borrow_mut().restore_session = value;
+        Ok(())
+    }
+
+    pub fn reset_to_defaults(&self) -> Result<(), String> {
+        let defaults = AppConfig::default();
+        self.set_homepage(&defaults.homepage)?;
+        self.set_search_engine(&defaults.search_engine)?;
+        self.set_dark_theme(defaults.dark_theme)?;
+        self.set_language(&defaults.language)?;
+        self.set_adblock_level(defaults.adblock_level)?;
+        self.set_user_agent(&defaults.user_agent)?;
+        self.set_restore_session(defaults.restore_session)?;
         Ok(())
     }
 }
