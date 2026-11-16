@@ -1,3 +1,6 @@
+// src-servo/src/app.rs
+#![forbid(unsafe_code)]
+
 use std::rc::Rc;
 
 use gtk4::prelude::*;
@@ -18,6 +21,10 @@ impl KestrelApp {
         let db = Rc::new(Database::init());
         let config = Rc::new(Config::new(db.clone()));
         Self { db, config }
+    }
+
+    pub fn user_agent(&self) -> String {
+        self.config.user_agent()
     }
 
     pub fn run(&self) -> glib::ExitCode {
