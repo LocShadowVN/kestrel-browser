@@ -1,8 +1,10 @@
 // src-servo/src/compat/polyfills.rs
-//! Polyfill JavaScript chuẩn hóa (v9) + Anti-Adblock Defuser + Chrome Spoofing + Lazy-Load Hydrator.
+#![forbid(unsafe_code)]
+//! Polyfill JavaScript chuẩn hóa (v10) + Anti-Adblock Defuser + Chrome Spoofing + Lazy-Load Hydrator.
 //! - Hỗ trợ `Ctrl+Click` / `Middle-Click` vào thẻ `<a>` để mở link trong tab mới (`open-new-tab`).
-//! - Đồng bộ kênh IPC dự phòng (`__servo_gtk_msg__`) với `NAV_SHIM`.
-//! - Bổ sung `MutationObserver` có điều tiết (throttled) để dọn quảng cáo động & hydrate ảnh trên SPA.
+//! - Báo cáo URL khi rê chuột lên link (`link-hover`) về thanh trạng thái Kestrel.
+//! - Bộ tìm kiếm văn bản DOM (`window.__kestrelFind`) có cuộn mượt và đếm kết quả (`find-result`).
+//! - `window.matchMedia` phản hồi chính xác theo kích thước cửa sổ thực tế (không làm vỡ layout Desktop).
 
 pub const POLYFILL_SCRIPT: &str = r#"
 (function () {
@@ -31,6 +33,24 @@ pub const POLYFILL_SCRIPT: &str = r#"
                     configurable: true
                 });
             }
+            if (typeof navigator.hardwareConcurrency === 'undefined') {
+                Object.defineProperty(navigator, 'hardwareConcurrency', {
+                    get: function () { return 8; },
+                    configurable: true
+                });
+            }
+            if (typeof navigator.deviceMemory === 'undefined') {
+                Object.defineProperty(navigator, 'deviceMemory', {
+                    get: function () { return 8; },
+                    configurable: true
+                });
+            }
+            if (typeof navigator.maxTouchPoints === 'undefined') {
+                Object.defineProperty(navigator, 'maxTouchPoints', {
+                    get: function () { return 0; },
+                    configurable: true
+                });
+            }
             if (typeof navigator.userAgentData === 'undefined') {
                 Object.defineProperty(navigator, 'userAgentData', {
                     get: function () {
@@ -54,6 +74,29 @@ pub const POLYFILL_SCRIPT: &str = r#"
                             },
                             toJSON: function () {
                                 return { brands: this.brands, mobile: false, platform: 'Linux' };
+                            }
+                        };
+                    },
+                    configurable: true
+                });
+            }
+            if (typeof navigator.clipboard === 'undefined') {
+                Object.defineProperty(navigator, 'clipboard', {
+                    get: function () {
+                        return {
+                            writeText: function () { return Promise.resolve(); },
+                            readText: function () { return Promise.resolve(''); }
+                        };
+                    },
+                    configurable: true
+                });
+            }
+            if (typeof navigator.permissions === 'undefined') {
+                Object.defineProperty(navigator, 'permissions', {
+                    get: function () {
+                        return {
+                            query: function () {
+                                return Promise.resolve({ state: 'prompt', onchange: null });
                             }
                         };
                     },
@@ -93,7 +136,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         return false;
     }
 
-    // ---- 1.5. Ctrl+Click & Middle-Click (Button 1) để mở link trong Tab mới ----
+    // ---- 1.5. Ctrl+Click, Middle-Click & Link Hover Status ----
     if (typeof document !== 'undefined') {
         function findAnchor(el) {
             while (el && el !== document) {
@@ -128,6 +171,16 @@ pub const POLYFILL_SCRIPT: &str = r#"
                 }
             }
         }, true);
+
+        var lastHoverHref = '';
+        document.addEventListener('mouseover', function (e) {
+            var a = findAnchor(e.target);
+            var href = (a && a.href && a.href.indexOf('javascript:') !== 0) ? a.href : '';
+            if (href !== lastHoverHref) {
+                lastHoverHref = href;
+                postToKestrel({ action: 'link-hover', url: href });
+            }
+        }, { passive: true });
     }
 
     // ---- 2. Anti-Adblock Defuser & Ad-Script Surrogates ----
@@ -325,7 +378,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         } catch (_) {}
     }
 
-    // ---- 3. Safe Cosmetic Adblock, Anti-Adblock Modal Remover & Lazy-Load Hydrator ----
+    // ---- 3. Safe Cosmetic Adblock & Deduplicated Lazy-Load Hydrator ----
     var AD_SELECTORS = [
         '[id^="div-gpt-ad"]',
         '[id^="google_ads_iframe"]',
@@ -378,20 +431,24 @@ pub const POLYFILL_SCRIPT: &str = r#"
     function hydrateLazyMedia() {
         if (typeof document === 'undefined' || !document.body) return;
         try {
-            var imgs = document.querySelectorAll('img[data-src], img[data-original], img[data-lazy-src]');
+            var imgs = document.querySelectorAll(
+                'img[data-src]:not([data-kestrel-hydrated]), img[data-original]:not([data-kestrel-hydrated]), img[data-lazy-src]:not([data-kestrel-hydrated])'
+            );
             for (var i = 0; i < imgs.length; i++) {
                 var img = imgs[i];
+                img.setAttribute('data-kestrel-hydrated', '1');
                 var realSrc = img.getAttribute('data-src') || img.getAttribute('data-original') || img.getAttribute('data-lazy-src');
-                if (realSrc && (realSrc.indexOf('http') === 0 || realSrc.indexOf('//') === 0)) {
+                if (realSrc && (realSrc.indexOf('http') === 0 || realSrc.indexOf('//') === 0 || realSrc.indexOf('/') === 0)) {
                     var cur = img.getAttribute('src') || '';
                     if (!cur || cur.indexOf('data:image') === 0 || cur.indexOf('base64') !== -1) {
                         img.setAttribute('src', realSrc);
                     }
                 }
             }
-            var sources = document.querySelectorAll('source[data-srcset]');
+            var sources = document.querySelectorAll('source[data-srcset]:not([data-kestrel-hydrated])');
             for (var j = 0; j < sources.length; j++) {
                 var srcEl = sources[j];
+                srcEl.setAttribute('data-kestrel-hydrated', '1');
                 var srcset = srcEl.getAttribute('data-srcset');
                 if (srcset && !srcEl.getAttribute('srcset')) {
                     srcEl.setAttribute('srcset', srcset);
@@ -400,34 +457,40 @@ pub const POLYFILL_SCRIPT: &str = r#"
         } catch (_) {}
     }
 
+    var isScrubbing = false;
     function scrubAdsAndHydrate() {
-        if (typeof document === 'undefined' || isInternalPage()) return;
-
-        hydrateLazyMedia();
-
-        if (!isShieldsEnabled()) {
-            var existingStyle = document.getElementById('kestrel-cosmetic-adblock');
-            if (existingStyle && existingStyle.parentNode) {
-                existingStyle.parentNode.removeChild(existingStyle);
-            }
-            return;
-        }
-
-        if (!document.getElementById('kestrel-cosmetic-adblock')) {
-            var target = document.head || document.documentElement;
-            if (target) {
-                try {
-                    var style = document.createElement('style');
-                    style.id = 'kestrel-cosmetic-adblock';
-                    style.textContent = COSMETIC_ADBLOCK_CSS;
-                    target.appendChild(style);
-                } catch (_) {}
-            }
-        }
-
-        if (!document.body) return;
-        var newlyBlocked = 0;
+        if (isScrubbing || typeof document === 'undefined' || isInternalPage()) return;
+        isScrubbing = true;
         try {
+            hydrateLazyMedia();
+
+            if (!isShieldsEnabled()) {
+                var existingStyle = document.getElementById('kestrel-cosmetic-adblock');
+                if (existingStyle && existingStyle.parentNode) {
+                    existingStyle.parentNode.removeChild(existingStyle);
+                }
+                isScrubbing = false;
+                return;
+            }
+
+            if (!document.getElementById('kestrel-cosmetic-adblock')) {
+                var target = document.head || document.documentElement;
+                if (target) {
+                    try {
+                        var style = document.createElement('style');
+                        style.id = 'kestrel-cosmetic-adblock';
+                        style.textContent = COSMETIC_ADBLOCK_CSS;
+                        target.appendChild(style);
+                    } catch (_) {}
+                }
+            }
+
+            if (!document.body) {
+                isScrubbing = false;
+                return;
+            }
+
+            var newlyBlocked = 0;
             var nodes = document.querySelectorAll(combinedSelector);
             for (var i = 0; i < nodes.length; i++) {
                 var el = nodes[i];
@@ -446,28 +509,28 @@ pub const POLYFILL_SCRIPT: &str = r#"
                     document.documentElement.style.setProperty('overflow', 'auto', 'important');
                 }
             }
-        } catch (_) {}
 
-        if (newlyBlocked > 0) {
-            reportCosmeticBlocked(newlyBlocked);
-        }
+            if (newlyBlocked > 0) {
+                reportCosmeticBlocked(newlyBlocked);
+            }
+        } catch (_) {}
+        isScrubbing = false;
     }
 
     if (!isInternalPage()) {
         scrubAdsAndHydrate();
-        setTimeout(scrubAdsAndHydrate, 100);
-        setTimeout(scrubAdsAndHydrate, 400);
-        setTimeout(scrubAdsAndHydrate, 1200);
-        setTimeout(scrubAdsAndHydrate, 2800);
+        setTimeout(scrubAdsAndHydrate, 120);
+        setTimeout(scrubAdsAndHydrate, 500);
+        setTimeout(scrubAdsAndHydrate, 1500);
 
         var scrubScheduled = false;
         function scheduleScrub() {
-            if (scrubScheduled) return;
+            if (scrubScheduled || isScrubbing) return;
             scrubScheduled = true;
             setTimeout(function () {
                 scrubScheduled = false;
                 scrubAdsAndHydrate();
-            }, 450);
+            }, 500);
         }
 
         function attachMutationScrubber() {
@@ -492,7 +555,6 @@ pub const POLYFILL_SCRIPT: &str = r#"
         if (typeof window !== 'undefined') {
             window.addEventListener('load', function () {
                 scrubAdsAndHydrate();
-                setTimeout(scrubAdsAndHydrate, 1000);
             }, { once: true });
         }
     }
@@ -506,18 +568,102 @@ pub const POLYFILL_SCRIPT: &str = r#"
             }
         };
 
+        var findState = {
+            query: '',
+            matches: [],
+            index: -1
+        };
+
+        function collectTextMatches(needle) {
+            var results = [];
+            if (!document || !document.body || !needle) return results;
+            var lowerNeedle = needle.toLowerCase();
+            var nLen = lowerNeedle.length;
+
+            var walker = document.createTreeWalker(
+                document.body,
+                4, // NodeFilter.SHOW_TEXT
+                null,
+                false
+            );
+
+            var node;
+            while ((node = walker.nextNode())) {
+                var parent = node.parentElement;
+                if (!parent) continue;
+                var tag = (parent.tagName || '').toUpperCase();
+                if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'TEMPLATE') {
+                    continue;
+                }
+                var text = node.nodeValue || '';
+                var lowerText = text.toLowerCase();
+                var pos = 0;
+                while ((pos = lowerText.indexOf(lowerNeedle, pos)) !== -1) {
+                    results.push({ node: node, start: pos, end: pos + nLen });
+                    pos += nLen;
+                    if (results.length >= 1000) return results;
+                }
+            }
+            return results;
+        }
+
         window.__kestrelFind = function (query, backwards) {
-            if (!query) {
+            var q = String(query || '');
+            if (!q) {
+                findState.query = '';
+                findState.matches = [];
+                findState.index = -1;
                 if (window.getSelection) {
                     var sel = window.getSelection();
                     if (sel && sel.removeAllRanges) sel.removeAllRanges();
                 }
+                postToKestrel({ action: 'find-result', current: 0, total: 0 });
                 return false;
             }
-            if (typeof window.find === 'function') {
-                return window.find(String(query), false, !!backwards, true, false, true, false);
+
+            if (findState.query !== q || findState.matches.length === 0) {
+                findState.query = q;
+                findState.matches = collectTextMatches(q);
+                findState.index = backwards ? findState.matches.length - 1 : 0;
+            } else {
+                var total = findState.matches.length;
+                if (backwards) {
+                    findState.index = (findState.index - 1 + total) % total;
+                } else {
+                    findState.index = (findState.index + 1) % total;
+                }
             }
-            return false;
+
+            var count = findState.matches.length;
+            if (count === 0) {
+                postToKestrel({ action: 'find-result', current: 0, total: 0 });
+                return false;
+            }
+
+            var match = findState.matches[findState.index];
+            try {
+                if (typeof document.createRange === 'function' && window.getSelection) {
+                    var range = document.createRange();
+                    range.setStart(match.node, match.start);
+                    range.setEnd(match.node, match.end);
+                    var sel = window.getSelection();
+                    if (sel) {
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                    }
+                }
+                var el = match.node.parentElement;
+                if (el && typeof el.scrollIntoView === 'function') {
+                    el.scrollIntoView({ block: 'center', inline: 'nearest' });
+                }
+            } catch (_) {}
+
+            postToKestrel({
+                action: 'find-result',
+                current: findState.index + 1,
+                total: count
+            });
+            return true;
         };
     }
 
@@ -693,7 +839,80 @@ pub const POLYFILL_SCRIPT: &str = r#"
         globalThis.PerformanceObserver.prototype.takeRecords = function () { return []; };
     }
 
-    // ---- 6. Modern JS Built-ins (ES2022–ES2024: Promise, Array, Set, Object, Map, URL, Crypto) ----
+    // ---- 6. BroadcastChannel & Constructable Stylesheets (Web Components) ----
+    if (typeof globalThis.BroadcastChannel === 'undefined') {
+        var bcChannels = Object.create(null);
+        globalThis.BroadcastChannel = function BroadcastChannel(name) {
+            this.name = String(name);
+            this.onmessage = null;
+            this.onmessageerror = null;
+            this._closed = false;
+            this._listeners = [];
+            if (!bcChannels[this.name]) bcChannels[this.name] = [];
+            bcChannels[this.name].push(this);
+        };
+        globalThis.BroadcastChannel.prototype.postMessage = function (msg) {
+            if (this._closed) return;
+            var subs = bcChannels[this.name] || [];
+            var self = this;
+            setTimeout(function () {
+                for (var i = 0; i < subs.length; i++) {
+                    var target = subs[i];
+                    if (target !== self && !target._closed) {
+                        var ev = { data: msg, target: target };
+                        if (typeof target.onmessage === 'function') {
+                            try { target.onmessage(ev); } catch (_) {}
+                        }
+                        for (var j = 0; j < target._listeners.length; j++) {
+                            try { target._listeners[j](ev); } catch (_) {}
+                        }
+                    }
+                }
+            }, 0);
+        };
+        globalThis.BroadcastChannel.prototype.addEventListener = function (type, fn) {
+            if (type === 'message' && typeof fn === 'function') this._listeners.push(fn);
+        };
+        globalThis.BroadcastChannel.prototype.removeEventListener = function (type, fn) {
+            if (type === 'message') {
+                var idx = this._listeners.indexOf(fn);
+                if (idx !== -1) this._listeners.splice(idx, 1);
+            }
+        };
+        globalThis.BroadcastChannel.prototype.close = function () {
+            this._closed = true;
+            var subs = bcChannels[this.name];
+            if (subs) {
+                var idx = subs.indexOf(this);
+                if (idx !== -1) subs.splice(idx, 1);
+            }
+        };
+    }
+
+    if (typeof CSSStyleSheet !== 'undefined') {
+        if (typeof CSSStyleSheet.prototype.replaceSync !== 'function') {
+            CSSStyleSheet.prototype.replaceSync = function (text) {
+                this._kestrelCssText = String(text || '');
+            };
+        }
+        if (typeof CSSStyleSheet.prototype.replace !== 'function') {
+            CSSStyleSheet.prototype.replace = function (text) {
+                this.replaceSync(text);
+                return Promise.resolve(this);
+            };
+        }
+    }
+    if (typeof Document !== 'undefined' && !('adoptedStyleSheets' in Document.prototype)) {
+        try {
+            Object.defineProperty(Document.prototype, 'adoptedStyleSheets', {
+                get: function () { return this._adoptedSheets || (this._adoptedSheets = []); },
+                set: function (sheets) { this._adoptedSheets = Array.isArray(sheets) ? sheets : []; },
+                configurable: true
+            });
+        } catch (_) {}
+    }
+
+    // ---- 7. Modern JS Built-ins (ES2022–ES2024: Promise, Array, Set, Object, Map, URL, Crypto) ----
     if (typeof globalThis.AggregateError === 'undefined') {
         globalThis.AggregateError = function AggregateError(errors, message) {
             var err = new Error(message || '');
@@ -1044,6 +1263,7 @@ pub const POLYFILL_SCRIPT: &str = r#"
         globalThis.cancelIdleCallback = function (handle) { clearTimeout(handle); };
     }
 
+    // ---- 8. Viewport, Responsive matchMedia & Element Polyfills ----
     if (typeof window !== 'undefined') {
         if (typeof window.visualViewport === 'undefined') {
             var vv = {
@@ -1062,13 +1282,44 @@ pub const POLYFILL_SCRIPT: &str = r#"
 
         if (typeof window.matchMedia !== 'function') {
             window.matchMedia = function (query) {
-                var q = String(query || '').toLowerCase();
-                var matches = false;
-                if (q === '' || q === 'all' || q === 'screen') matches = true;
-                else if (q.indexOf('prefers-color-scheme: dark') !== -1) matches = true;
+                var raw = String(query || '');
+                function evaluateQuery() {
+                    var q = raw.toLowerCase().trim();
+                    if (!q || q === 'all' || q === 'screen') return true;
+                    if (q === 'print') return false;
+                    var vw = window.innerWidth || 1280;
+                    var vh = window.innerHeight || 800;
+                    if (q.indexOf('prefers-reduced-motion: reduce') !== -1) return false;
+                    if (q.indexOf('prefers-color-scheme: dark') !== -1) {
+                        return window.__kestrelDarkTheme !== false;
+                    }
+                    if (q.indexOf('prefers-color-scheme: light') !== -1) {
+                        return window.__kestrelDarkTheme === false;
+                    }
+                    if (q.indexOf('pointer: fine') !== -1 || q.indexOf('hover: hover') !== -1) return true;
+                    if (q.indexOf('pointer: coarse') !== -1) return false;
+
+                    var minW = q.match(/min-width\s*:\s*(\d+(?:\.\d+)?)\s*(px|em|rem)?/);
+                    if (minW) {
+                        var valMin = parseFloat(minW[1]) * (minW[2] === 'em' || minW[2] === 'rem' ? 16 : 1);
+                        if (vw < valMin) return false;
+                    }
+                    var maxW = q.match(/max-width\s*:\s*(\d+(?:\.\d+)?)\s*(px|em|rem)?/);
+                    if (maxW) {
+                        var valMax = parseFloat(maxW[1]) * (maxW[2] === 'em' || maxW[2] === 'rem' ? 16 : 1);
+                        if (vw > valMax) return false;
+                    }
+                    var minH = q.match(/min-height\s*:\s*(\d+(?:\.\d+)?)\s*px/);
+                    if (minH && vh < parseFloat(minH[1])) return false;
+                    var maxH = q.match(/max-height\s*:\s*(\d+(?:\.\d+)?)\s*px/);
+                    if (maxH && vh > parseFloat(maxH[1])) return false;
+
+                    return true;
+                }
+
                 return {
-                    matches: matches,
-                    media: String(query || ''),
+                    get matches() { return evaluateQuery(); },
+                    media: raw,
                     onchange: null,
                     addListener: function () {},
                     removeListener: function () {},
@@ -1108,6 +1359,27 @@ pub const POLYFILL_SCRIPT: &str = r#"
         }
         if (typeof Element.prototype.checkVisibility !== 'function') {
             Element.prototype.checkVisibility = function () { return true; };
+        }
+        if (typeof Element.prototype.scrollIntoViewIfNeeded !== 'function') {
+            Element.prototype.scrollIntoViewIfNeeded = function () {
+                if (typeof this.scrollIntoView === 'function') {
+                    this.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                }
+            };
+        }
+    }
+
+    if (typeof HTMLDialogElement !== 'undefined') {
+        if (typeof HTMLDialogElement.prototype.showModal !== 'function') {
+            HTMLDialogElement.prototype.showModal = function () {
+                this.setAttribute('open', '');
+            };
+        }
+        if (typeof HTMLDialogElement.prototype.close !== 'function') {
+            HTMLDialogElement.prototype.close = function (retVal) {
+                if (retVal !== undefined) this.returnValue = retVal;
+                this.removeAttribute('open');
+            };
         }
     }
 })();
