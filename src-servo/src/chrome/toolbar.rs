@@ -1,8 +1,11 @@
 // src-servo/src/chrome/toolbar.rs
-//! Toolbar — Các nút điều hướng SVG + Omnibox (tích hợp sẵn Star, Zoom & Shields) + Find Bar (Ctrl+F) + Menu.
+#![forbid(unsafe_code)]
+//! Toolbar — Các nút điều hướng SVG + Omnibox (tích hợp sẵn Star, Zoom & Shields)
+//! + Thanh tiến trình nội suy 60fps + Find Bar (Ctrl+F kèm bộ đếm kết quả) + Menu.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::time::Duration;
 
 use gtk4::gdk;
 use gtk4::glib;
@@ -23,18 +26,22 @@ pub struct Toolbar {
     forward: Button,
     reload: Button,
     reload_icon: Image,
-    is_loading: Cell<bool>,
+    is_loading: Rc<Cell<bool>>,
+    progress_timer: Rc<RefCell<Option<glib::SourceId>>>,
     home: Button,
     bookmarks_btn: Button,
     adblock: Rc<AdblockButton>,
     progress: ProgressBar,
     find_revealer: Revealer,
     find_entry: Entry,
+    find_status: Label,
     find_prev: Button,
     find_next: Button,
     find_close: Button,
     popover: Popover,
     menu_new_tab: Button,
+    menu_reopen_tab: Button,
+    menu_find: Button,
     menu_history: Button,
     menu_settings: Button,
     menu_bookmarks: Button,
@@ -100,6 +107,18 @@ impl Toolbar {
             "New Tab",
             "Ctrl+T",
         );
+        let menu_reopen_tab = menu_item_with_icon(
+            icons::HISTORY_ICON,
+            "document-Revert-symbolic",
+            "Reopen Closed Tab",
+            "Ctrl+Shift+T",
+        );
+        let menu_find = menu_item_with_icon(
+            icons::SEARCH_ICON,
+            "edit-find-symbolic",
+            "Find in Page",
+            "Ctrl+F",
+        );
         let menu_bookmarks = menu_item_with_icon(
             icons::BOOKMARKS_ICON,
             "user-bookmarks-symbolic",
@@ -134,12 +153,17 @@ impl Toolbar {
         let menu_box = GtkBox::new(Orientation::Vertical, 2);
         menu_box.add_css_class("kestrel-menu");
         menu_box.append(&menu_new_tab);
+        menu_box.append(&menu_reopen_tab);
+        menu_box.append(&menu_find);
+        let sep1 = Separator::new(Orientation::Horizontal);
+        sep1.add_css_class("kestrel-menu-separator");
+        menu_box.append(&sep1);
         menu_box.append(&menu_bookmarks);
         menu_box.append(&menu_history);
         menu_box.append(&menu_settings);
-        let sep = Separator::new(Orientation::Horizontal);
-        sep.add_css_class("kestrel-menu-separator");
-        menu_box.append(&sep);
+        let sep2 = Separator::new(Orientation::Horizontal);
+        sep2.add_css_class("kestrel-menu-separator");
+        menu_box.append(&sep2);
         menu_box.append(&menu_about);
         menu_box.append(&menu_quit);
 
@@ -167,7 +191,7 @@ impl Toolbar {
         progress.set_fraction(0.0);
         progress.set_visible(false);
 
-        // --- Thanh Tìm trong trang (Find in Page — Ctrl+F) với Icon SVG đồng bộ ---
+        // --- Thanh Tìm trong trang (Find in Page — Ctrl+F) ---
         let find_revealer = Revealer::builder()
             .transition_type(RevealerTransitionType::SlideDown)
             .transition_duration(120)
@@ -183,6 +207,10 @@ impl Toolbar {
             .width_chars(28)
             .build();
         find_entry.add_css_class("kestrel-find-entry");
+
+        let find_status = Label::new(None);
+        find_status.add_css_class("kestrel-find-status");
+        find_status.set_xalign(0.5);
 
         let find_prev = icons::svg_button(
             icons::CHEVRON_UP,
@@ -210,13 +238,29 @@ impl Toolbar {
 
         {
             let rev_c = find_revealer.clone();
+            let status_c = find_status.clone();
             find_close.connect_clicked(move |_| {
                 rev_c.set_reveal_child(false);
+                status_c.set_text("");
+                status_c.remove_css_class("no-match");
+            });
+        }
+
+        {
+            let rev_c = find_revealer.clone();
+            let entry_c = find_entry.clone();
+            let pop_c = popover.clone();
+            menu_find.connect_clicked(move |_| {
+                pop_c.popdown();
+                rev_c.set_reveal_child(true);
+                entry_c.grab_focus();
+                entry_c.select_region(0, -1);
             });
         }
 
         find_bar.append(&find_icon);
         find_bar.append(&find_entry);
+        find_bar.append(&find_status);
         find_bar.append(&find_prev);
         find_bar.append(&find_next);
         find_bar.append(&find_close);
@@ -233,18 +277,22 @@ impl Toolbar {
             forward,
             reload,
             reload_icon,
-            is_loading: Cell::new(false),
+            is_loading: Rc::new(Cell::new(false)),
+            progress_timer: Rc::new(RefCell::new(None)),
             home,
             bookmarks_btn,
             adblock,
             progress,
             find_revealer,
             find_entry,
+            find_status,
             find_prev,
             find_next,
             find_close,
             popover,
             menu_new_tab,
+            menu_reopen_tab,
+            menu_find,
             menu_history,
             menu_settings,
             menu_bookmarks,
@@ -279,6 +327,8 @@ impl Toolbar {
 
     pub fn hide_find_bar(&self) {
         self.find_revealer.set_reveal_child(false);
+        self.find_status.set_text("");
+        self.find_status.remove_css_class("no-match");
     }
 
     pub fn toggle_find_bar(&self) {
@@ -289,9 +339,36 @@ impl Toolbar {
         }
     }
 
+    pub fn set_find_status(&self, current: usize, total: usize) {
+        if self.find_entry.text().trim().is_empty() {
+            self.find_status.set_text("");
+            self.find_status.remove_css_class("no-match");
+            return;
+        }
+        if total == 0 {
+            self.find_status.set_text("0 results");
+            self.find_status.add_css_class("no-match");
+        } else {
+            self.find_status.set_text(&format!("{}/{}", current, total));
+            self.find_status.remove_css_class("no-match");
+        }
+    }
+
     pub fn on_find<F: Fn(&str, bool) + 'static>(&self, cb: F) {
         let cb = Rc::new(cb);
 
+        {
+            let cb_c = cb.clone();
+            let status_c = self.find_status.clone();
+            self.find_entry.connect_changed(move |entry| {
+                let text = entry.text().to_string();
+                if text.trim().is_empty() {
+                    status_c.set_text("");
+                    status_c.remove_css_class("no-match");
+                }
+                cb_c(&text, false);
+            });
+        }
         {
             let cb_c = cb.clone();
             self.find_entry.connect_activate(move |entry| {
@@ -303,10 +380,13 @@ impl Toolbar {
             let cb_c = cb.clone();
             let entry_c = self.find_entry.clone();
             let rev_c = self.find_revealer.clone();
+            let status_c = self.find_status.clone();
             let key_ctrl = EventControllerKey::new();
             key_ctrl.connect_key_pressed(move |_ctrl, keyval, _keycode, state| {
                 if keyval == gdk::Key::Escape {
                     rev_c.set_reveal_child(false);
+                    status_c.set_text("");
+                    status_c.remove_css_class("no-match");
                     cb_c("", false);
                     return glib::Propagation::Stop;
                 }
@@ -350,11 +430,32 @@ impl Toolbar {
             return;
         }
         self.is_loading.set(loading);
+
+        // Hủy timer cũ nếu có
+        if let Some(source_id) = self.progress_timer.borrow_mut().take() {
+            source_id.remove();
+        }
+
         if loading {
             icons::set_image_svg(&self.reload_icon, icons::STOP, "process-stop-symbolic", 16);
-            self.reload.set_tooltip_text(Some("Stop loading"));
-            self.progress.set_fraction(0.35);
+            self.reload.set_tooltip_text(Some("Stop / Reload"));
+            self.progress.set_fraction(0.15);
             self.progress.set_visible(true);
+
+            let progress_c = self.progress.clone();
+            let is_loading_c = self.is_loading.clone();
+            let timer_slot = self.progress_timer.clone();
+            let id = glib::timeout_add_local(Duration::from_millis(50), move || {
+                if !is_loading_c.get() {
+                    *timer_slot.borrow_mut() = None;
+                    return glib::ControlFlow::Break;
+                }
+                let cur = progress_c.fraction();
+                let remaining = (0.92 - cur).max(0.0);
+                progress_c.set_fraction(cur + remaining * 0.08);
+                glib::ControlFlow::Continue
+            });
+            *self.progress_timer.borrow_mut() = Some(id);
         } else {
             icons::set_image_svg(
                 &self.reload_icon,
@@ -364,7 +465,19 @@ impl Toolbar {
             );
             self.reload.set_tooltip_text(Some("Reload (Ctrl+R)"));
             self.progress.set_fraction(1.0);
-            self.progress.set_visible(false);
+
+            let progress_c = self.progress.clone();
+            let is_loading_c = self.is_loading.clone();
+            let timer_slot = self.progress_timer.clone();
+            let id = glib::timeout_add_local(Duration::from_millis(140), move || {
+                if !is_loading_c.get() {
+                    progress_c.set_visible(false);
+                    progress_c.set_fraction(0.0);
+                }
+                *timer_slot.borrow_mut() = None;
+                glib::ControlFlow::Break
+            });
+            *self.progress_timer.borrow_mut() = Some(id);
         }
     }
 
@@ -389,6 +502,13 @@ impl Toolbar {
     pub fn on_new_tab<F: Fn() + 'static>(&self, cb: F) {
         let pop = self.popover.clone();
         self.menu_new_tab.connect_clicked(move |_| {
+            pop.popdown();
+            cb();
+        });
+    }
+    pub fn on_reopen_closed_tab<F: Fn() + 'static>(&self, cb: F) {
+        let pop = self.popover.clone();
+        self.menu_reopen_tab.connect_clicked(move |_| {
             pop.popdown();
             cb();
         });
