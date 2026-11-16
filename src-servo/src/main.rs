@@ -1,4 +1,6 @@
 // src-servo/src/main.rs
+#![forbid(unsafe_code)]
+
 mod adblock_rules;
 mod app;
 mod chrome;
@@ -96,7 +98,11 @@ fn main() -> glib::ExitCode {
     // 1. Thiết lập KESTREL_USER_AGENT hoàn toàn trên single-thread (tránh data race của setenv).
     // 2. Xác định chính xác adblock_level đang kích hoạt của người dùng để ưu tiên nạp/biên dịch trước.
     let app = app::KestrelApp::new();
+    env::set_var("KESTREL_USER_AGENT", app.user_agent());
+
     let preferred_level = adblock_rules::get_active_level();
+    // Nếu trên đĩa đã có sẵn file cache blob (< 1ms), nạp ngay để tab đầu tiên có adblock tức thì.
+    adblock_rules::preload_disk_cache_if_present(preferred_level);
 
     std::thread::Builder::new()
         .name("kestrel-adblock-compiler".into())
