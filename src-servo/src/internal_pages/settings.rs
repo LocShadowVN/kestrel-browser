@@ -1,4 +1,5 @@
 // src-servo/src/internal_pages/settings.rs
+#![forbid(unsafe_code)]
 //! Trang cài đặt nội bộ — kestrel://settings & kestrel://about.
 //! Đồng bộ hóa trạng thái `.active` trên mọi nút chọn khi Restore Defaults hoặc khi sửa tay input.
 
@@ -19,6 +20,7 @@ pub fn render(
         dark,
         adblock_level,
         shared::DEFAULT_USER_AGENT,
+        true,
     )
 }
 
@@ -29,6 +31,7 @@ pub fn render_full(
     dark: bool,
     adblock_level: u8,
     user_agent: &str,
+    restore_session: bool,
 ) -> String {
     let vi = lang == "vi";
     let safe_lang = if vi { "vi" } else { "en" };
@@ -39,6 +42,9 @@ pub fn render_full(
 
     let dark_active = if dark { " active" } else { "" };
     let light_active = if !dark { " active" } else { "" };
+
+    let restore_on_active = if restore_session { " active" } else { "" };
+    let restore_off_active = if !restore_session { " active" } else { "" };
 
     let ab_0_active = if adblock_level == 0 { " active" } else { "" };
     let ab_1_active = if adblock_level == 1 { " active" } else { "" };
@@ -262,6 +268,19 @@ pub fn render_full(
 
     <h2>{general}</h2>
     <div class="field">
+      <div class="field-header">
+        <div>
+          <label>{restore_label}</label>
+          <div class="hint" style="margin-bottom:0;">{restore_hint}</div>
+        </div>
+        <div class="seg-group" id="restore-group">
+          <button type="button" class="seg-btn{restore_on_active}" data-restore="true">{restore_on_btn}</button>
+          <button type="button" class="seg-btn{restore_off_active}" data-restore="false">{restore_off_btn}</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="field">
       <label for="search_engine">{search_label}</label>
       <div class="hint">{search_hint}</div>
       <div class="presets" id="preset-group">
@@ -299,7 +318,7 @@ pub fn render_full(
   <h2 id="about">{about}</h2>
   <div class="about-card" id="about-card">
     <div class="about-row"><span>{version_label}</span><span class="badge">1.0.0-alpha</span></div>
-    <div class="about-row"><span>{engine_label}</span><span>Servo 0.7 + adblock-rust</span></div>
+    <div class="about-row"><span>{engine_label}</span><span>Servo 0.6 + adblock-rust</span></div>
     <div class="about-row"><span>{license_label}</span><span>GPL-3.0</span></div>
     <div class="about-row"><span>{source_label}</span><a href="https://github.com/LocShadowVN/kestrel-browser">GitHub</a></div>
   </div>
@@ -315,7 +334,8 @@ pub fn render_full(
   var state = {{
     language: '{lang}',
     dark_theme: {dark_js},
-    adblock_level: {adblock_level}
+    adblock_level: {adblock_level},
+    restore_session: {restore_js}
   }};
 
   var form = document.getElementById('settings-form');
@@ -339,6 +359,10 @@ pub fn render_full(
     document.querySelectorAll('#lang-group .seg-btn').forEach(function (b) {{
       b.classList.toggle('active', b.getAttribute('data-lang') === state.language);
     }});
+    document.querySelectorAll('#restore-group .seg-btn').forEach(function (b) {{
+      var isRestore = b.getAttribute('data-restore') === 'true';
+      b.classList.toggle('active', isRestore === state.restore_session);
+    }});
     document.querySelectorAll('#shields-group .shield-card').forEach(function (c) {{
       var lvl = parseInt(c.getAttribute('data-level') || '1', 10);
       c.classList.toggle('active', lvl === state.adblock_level);
@@ -361,7 +385,8 @@ pub fn render_full(
       user_agent: (uaInput && uaInput.value.trim()) || DEFAULT_UA,
       language: state.language,
       dark_theme: state.dark_theme,
-      adblock_level: state.adblock_level
+      adblock_level: state.adblock_level,
+      restore_session: state.restore_session
     }};
     if (window.__kestrelSend) {{
       window.__kestrelSend(payload);
@@ -381,6 +406,14 @@ pub fn render_full(
   document.querySelectorAll('#lang-group .seg-btn').forEach(function (btn) {{
     btn.addEventListener('click', function () {{
       state.language = btn.getAttribute('data-lang') || 'en';
+      syncActiveButtons();
+      pushSettings();
+    }});
+  }});
+
+  document.querySelectorAll('#restore-group .seg-btn').forEach(function (btn) {{
+    btn.addEventListener('click', function () {{
+      state.restore_session = btn.getAttribute('data-restore') === 'true';
       syncActiveButtons();
       pushSettings();
     }});
@@ -427,6 +460,7 @@ pub fn render_full(
       state.language = 'en';
       state.dark_theme = true;
       state.adblock_level = 1;
+      state.restore_session = true;
       document.documentElement.className = 'dark';
       if (homeInput) homeInput.value = DEFAULT_HOME;
       if (searchInput) searchInput.value = DEFAULT_SEARCH;
@@ -455,6 +489,7 @@ pub fn render_full(
         lang = safe_lang,
         theme_class = theme_class,
         dark_js = if dark { "true" } else { "false" },
+        restore_js = if restore_session { "true" } else { "false" },
         adblock_level = adblock_level,
         title = t("Settings", "Cài đặt"),
         home_lbl = t("Home", "Trang chủ"),
@@ -474,6 +509,13 @@ pub fn render_full(
             "Language for Kestrel internal pages and dashboard.",
             "Ngôn ngữ cho các trang nội bộ của Kestrel."
         ),
+        restore_label = t("On Startup", "Khi khởi động trình duyệt"),
+        restore_hint = t(
+            "Continue where you left off or start with a fresh Homepage tab.",
+            "Khôi phục các tab từ phiên trước hoặc mở mới trang chủ."
+        ),
+        restore_on_btn = t("Restore Session", "Khôi phục phiên cũ"),
+        restore_off_btn = t("Open Homepage", "Mở Trang chủ"),
         shields_label = t("Ad & Tracker Blocking Level", "Mức độ chặn quảng cáo & tracker"),
         shields_hint = t(
             "Click to switch protection mode immediately across all tabs.",
@@ -520,6 +562,8 @@ pub fn render_full(
         vi_active = vi_active,
         dark_active = dark_active,
         light_active = light_active,
+        restore_on_active = restore_on_active,
+        restore_off_active = restore_off_active,
         ab_0_active = ab_0_active,
         ab_1_active = ab_1_active,
         ab_2_active = ab_2_active,
