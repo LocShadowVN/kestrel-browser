@@ -1,4 +1,5 @@
 // src-servo/src/chrome/style.rs
+#![forbid(unsafe_code)]
 //! Global CSS cho Kestrel — Ngôn ngữ thiết kế Monochrome Carbon lấy cảm hứng từ Brave,
 //! sắc nét, chuyên nghiệp, không dùng màu sắc lòe loẹt, tương phản chuẩn cả Dark lẫn Light Mode.
 
@@ -82,7 +83,7 @@ window.theme-light .kestrel-tab-strip {
 .kestrel-tab.active {
     background: #171a24;
     color: #f4f6fc;
-    border-color: #292e3e;
+    border-color: #2c3244;
 }
 
 window.theme-light .kestrel-tab {
@@ -314,6 +315,9 @@ button.kestrel-omnibox-zoom {
     font-weight: 600;
     color: #d8dae4;
 }
+button.kestrel-omnibox-zoom:hover {
+    background: rgba(255, 255, 255, 0.14);
+}
 window.theme-light button.kestrel-omnibox-zoom {
     background: #edf0f6;
     border-color: #c7cddb;
@@ -414,8 +418,25 @@ window.theme-light entry.kestrel-find-entry > text {
     border-color: #c7cddb;
 }
 
+.kestrel-find-status {
+    font-size: 12px;
+    font-weight: 500;
+    color: #8a8fa3;
+    padding: 0 6px;
+    min-width: 64px;
+}
+.kestrel-find-status.no-match {
+    color: #e07a7a;
+}
+window.theme-light .kestrel-find-status {
+    color: #54596c;
+}
+window.theme-light .kestrel-find-status.no-match {
+    color: #b83232;
+}
+
 /* ============================================================
-   LOADING PROGRESS BAR
+   LOADING PROGRESS BAR & HOVER STATUS PILL
    ============================================================ */
 progressbar.kestrel-progress {
     min-height: 2px;
@@ -432,9 +453,25 @@ progressbar.kestrel-progress progress {
     min-height: 2px;
     background: #d4d7e4;
     border: none;
+    transition: all 80ms linear;
 }
 window.theme-light progressbar.kestrel-progress progress {
     background: #2c303e;
+}
+
+.kestrel-status-pill {
+    background: rgba(15, 17, 24, 0.94);
+    color: #d8dae4;
+    border: 1px solid #2a2e3f;
+    border-radius: 6px;
+    padding: 3px 9px;
+    margin: 6px 8px;
+    font-size: 11.5px;
+}
+window.theme-light .kestrel-status-pill {
+    background: rgba(255, 255, 255, 0.96);
+    color: #1c1f28;
+    border-color: #c7cddb;
 }
 
 /* ============================================================
@@ -464,7 +501,7 @@ window.theme-light popover > contents {
 .kestrel-menu {
     background: transparent;
     padding: 4px;
-    min-width: 226px;
+    min-width: 234px;
 }
 
 .kestrel-shield-popover {
