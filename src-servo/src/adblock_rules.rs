@@ -1,7 +1,8 @@
 // src-servo/src/adblock_rules.rs
+#![forbid(unsafe_code)]
 //! Adblock engine blob — chỉ biên dịch các quy tắc chặn tầng mạng (Network rules),
 //! hỗ trợ phân tách theo cấp độ Standard (Level 1) và Aggressive (Level 2),
-//! nạp cực nhanh từ đĩa không gây khựng luồng giao diện GTK4.
+//! nạp cực nhanh từ đĩa và đảm bảo KHÔNG BAO GIỜ khóa luồng giao diện GTK4.
 
 use adblock::lists::ParseOptions;
 use adblock::Engine;
@@ -16,6 +17,13 @@ static BLOB_STANDARD: OnceLock<Vec<u8>> = OnceLock::new();
 static BLOB_AGGRESSIVE: OnceLock<Vec<u8>> = OnceLock::new();
 static ACTIVE_LEVEL: AtomicU8 = AtomicU8::new(1);
 
+const STATE_UNINIT: u8 = 0;
+const STATE_BUILDING: u8 = 1;
+const STATE_READY: u8 = 2;
+
+static STATE_STANDARD: AtomicU8 = AtomicU8::new(STATE_UNINIT);
+static STATE_AGGRESSIVE: AtomicU8 = AtomicU8::new(STATE_UNINIT);
+
 const MIN_BLOB_BYTES: usize = 4096;
 
 /// Cập nhật mức độ chặn mặc định cho các lần gọi `get_blob()` / `try_get_blob()`.
@@ -26,6 +34,31 @@ pub fn set_active_level(level: u8) {
 /// Đọc mức độ chặn đang kích hoạt hiện tại.
 pub fn get_active_level() -> u8 {
     ACTIVE_LEVEL.load(Ordering::Relaxed)
+}
+
+/// Nạp nhanh file cache có sẵn trên đĩa vào RAM trước khi tạo luồng biên dịch nền.
+/// Hàm này chỉ đọc tệp nhị phân có sẵn (< 1ms), tuyệt đối không biên dịch rule.
+pub fn preload_disk_cache_if_present(level: u8) {
+    if level == 0 {
+        return;
+    }
+    let normalized = if level == 1 { 1 } else { 2 };
+    let (lock, state) = if normalized == 1 {
+        (&BLOB_STANDARD, &STATE_STANDARD)
+    } else {
+        (&BLOB_AGGRESSIVE, &STATE_AGGRESSIVE)
+    };
+
+    if lock.get().is_some() {
+        state.store(STATE_READY, Ordering::Release);
+        return;
+    }
+
+    let path = blob_path_for_level(normalized);
+    if let Some(cached) = try_read_cached_blob(&path, normalized) {
+        let _ = lock.set(cached);
+        state.store(STATE_READY, Ordering::Release);
+    }
 }
 
 /// Trả về adblock engine đã serialize theo level đang kích hoạt (chờ nếu đang build).
@@ -41,23 +74,40 @@ pub fn get_blob() -> &'static [u8] {
 pub fn get_blob_for_level(level: u8) -> &'static [u8] {
     match level {
         0 => &[],
-        1 => BLOB_STANDARD
-            .get_or_init(|| build_or_load_blob_for_level(1))
-            .as_slice(),
-        _ => BLOB_AGGRESSIVE
-            .get_or_init(|| build_or_load_blob_for_level(2))
-            .as_slice(),
+        1 => {
+            let slice = BLOB_STANDARD
+                .get_or_init(|| {
+                    STATE_STANDARD.store(STATE_BUILDING, Ordering::Release);
+                    let built = build_or_load_blob_for_level(1);
+                    STATE_STANDARD.store(STATE_READY, Ordering::Release);
+                    built
+                })
+                .as_slice();
+            STATE_STANDARD.store(STATE_READY, Ordering::Release);
+            slice
+        }
+        _ => {
+            let slice = BLOB_AGGRESSIVE
+                .get_or_init(|| {
+                    STATE_AGGRESSIVE.store(STATE_BUILDING, Ordering::Release);
+                    let built = build_or_load_blob_for_level(2);
+                    STATE_AGGRESSIVE.store(STATE_READY, Ordering::Release);
+                    built
+                })
+                .as_slice();
+            STATE_AGGRESSIVE.store(STATE_READY, Ordering::Release);
+            slice
+        }
     }
 }
 
-/// Lấy adblock blob không khóa luồng UI nếu đang biên dịch lần đầu;
-/// nếu đã có sẵn file cache trên đĩa thì nạp tức thì (< 1ms).
+/// Lấy adblock blob hoàn toàn KHÔNG KHÓA (non-blocking) luồng giao diện GTK4.
 pub fn try_get_blob() -> Option<&'static [u8]> {
     let level = get_active_level();
     try_get_blob_for_level(level)
 }
 
-/// Lấy adblock blob theo level cụ thể mà không làm đơ luồng giao diện GTK4.
+/// Lấy adblock blob theo level cụ thể mà không bao giờ làm đơ luồng giao diện GTK4.
 pub fn try_get_blob_for_level(level: u8) -> Option<&'static [u8]> {
     match level {
         0 => None,
@@ -65,10 +115,14 @@ pub fn try_get_blob_for_level(level: u8) -> Option<&'static [u8]> {
             if let Some(b) = BLOB_STANDARD.get() {
                 return (!b.is_empty()).then_some(b.as_slice());
             }
-            if blob_path_for_level(1).exists() {
-                let b = get_blob_for_level(1);
-                return (!b.is_empty()).then_some(b);
+            // Chỉ thử đọc nhanh từ đĩa nếu luồng nền chưa giữ khóa BUILDING
+            if STATE_STANDARD.load(Ordering::Acquire) == STATE_UNINIT {
+                preload_disk_cache_if_present(1);
+                if let Some(b) = BLOB_STANDARD.get() {
+                    return (!b.is_empty()).then_some(b.as_slice());
+                }
             }
+            // Fallback tạm thời sang blob Aggressive nếu đã sẵn sàng trong RAM
             if let Some(b) = BLOB_AGGRESSIVE.get() {
                 return (!b.is_empty()).then_some(b.as_slice());
             }
@@ -78,9 +132,14 @@ pub fn try_get_blob_for_level(level: u8) -> Option<&'static [u8]> {
             if let Some(b) = BLOB_AGGRESSIVE.get() {
                 return (!b.is_empty()).then_some(b.as_slice());
             }
-            if blob_path_for_level(2).exists() {
-                let b = get_blob_for_level(2);
-                return (!b.is_empty()).then_some(b);
+            if STATE_AGGRESSIVE.load(Ordering::Acquire) == STATE_UNINIT {
+                preload_disk_cache_if_present(2);
+                if let Some(b) = BLOB_AGGRESSIVE.get() {
+                    return (!b.is_empty()).then_some(b.as_slice());
+                }
+            }
+            if let Some(b) = BLOB_STANDARD.get() {
+                return (!b.is_empty()).then_some(b.as_slice());
             }
             None
         }
